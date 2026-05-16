@@ -4,9 +4,37 @@
 
 ## 安装
 
+### 全局安装（推荐）
+
+安装后 `toss` 在任意终端都可直接使用：
+
+```bash
+git clone <repo-url> && cd toss
+uv tool install .
+```
+
+### 开发安装
+
+在项目目录内运行，不注册全局命令：
+
 ```bash
 git clone <repo-url> && cd toss
 uv sync
+```
+
+## 更新
+
+拉到新代码后重新安装即可升级：
+
+```bash
+cd /path/to/toss && git pull
+uv tool install . --reinstall
+```
+
+## 卸载
+
+```bash
+uv tool uninstall toss-mcp
 ```
 
 ## 注册到 Claude Code
@@ -54,12 +82,12 @@ uv sync
 ### CLI 模式
 
 ```bash
-uv run toss send report.pdf prod        # 扔文件到服务器
-uv run toss send a.txt b.txt nas        # 一次扔多个
-uv run toss pull prod data.csv          # 从服务器拿文件
-uv run toss ls prod                     # 看服务器上有什么
-uv run toss list                        # 列出所有服务器
-uv run toss init                        # 创建配置模板
+toss send report.pdf prod               # 扔文件到服务器
+toss send a.txt b.txt nas               # 一次扔多个
+toss pull prod data.csv                 # 从服务器拿文件
+toss ls prod                            # 看服务器上有什么
+toss list                               # 列出所有服务器
+toss init                               # 创建配置模板
 ```
 
 ### MCP 模式
