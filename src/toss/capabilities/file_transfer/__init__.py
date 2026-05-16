@@ -116,7 +116,7 @@ def register_mcp(app) -> None:
 
     @app.tool()
     async def send(server: str, files: list[str]) -> str:
-        """发送本地文件到服务器的收发目录。server: 服务器名称, files: 要发送的文件路径列表。返回传输结果摘要。"""
+        """发送本地文件到服务器的收发目录。如果是目录会自动打包为 tar.gz 后发送。server: 服务器名称, files: 要发送的文件路径列表（可包含目录）。返回传输结果摘要。"""
         try:
             return _mcp_send(server, files)
         except Exception as e:
@@ -159,7 +159,7 @@ def register_cli(subparsers) -> None:
     """注册 CLI 子命令到 argparse subparsers"""
 
     # toss send
-    p = subparsers.add_parser("send", help="发送文件到服务器")
+    p = subparsers.add_parser("send", help="发送文件到服务器（目录自动打包）")
     p.add_argument("files", nargs="+", help="本地文件路径")
     p.add_argument("server", help="服务器名称")
     p.set_defaults(handler=_cli_send)

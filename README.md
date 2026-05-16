@@ -5,9 +5,8 @@
 ## 安装
 
 ```bash
-pipx install toss-mcp
-# 或
-pip install toss-mcp
+git clone <repo-url> && cd toss
+uv sync
 ```
 
 ## 注册到 Claude Code
@@ -18,8 +17,8 @@ pip install toss-mcp
 {
   "mcpServers": {
     "toss": {
-      "command": "python",
-      "args": ["-m", "toss"]
+      "command": "uv",
+      "args": ["run", "--directory", "/path/to/toss", "toss"]
     }
   }
 }
@@ -29,24 +28,25 @@ pip install toss-mcp
 
 ## 配置
 
-配置文件 `~/.toss/config.yaml`，首次使用前运行 `toss init` 创建模板：
+配置文件 `~/.toss/config.json`，首次使用前运行 `toss init` 创建模板：
 
-```yaml
-# 文件传输
-file_transfer:
-  target_dir: ~/toss
-  servers:
-    prod:
-      host: 10.0.0.50
-      user: root
-    nas:
-      host: nas.local
-      user: ice
-      port: 2222
-
-# 未来其他工具
-# some_tool:
-#   ...
+```json
+{
+  "file_transfer": {
+    "target_dir": "~/toss",
+    "servers": {
+      "prod": {
+        "host": "10.0.0.50",
+        "user": "root"
+      },
+      "nas": {
+        "host": "nas.local",
+        "user": "ice",
+        "port": 2222
+      }
+    }
+  }
+}
 ```
 
 ## 使用方式
@@ -54,12 +54,12 @@ file_transfer:
 ### CLI 模式
 
 ```bash
-toss send report.pdf prod           # 扔文件到服务器
-toss send a.txt b.txt nas           # 一次扔多个
-toss pull prod data.csv             # 从服务器拿文件
-toss ls prod                        # 看服务器上有什么
-toss list                           # 列出所有服务器
-toss init                           # 创建配置模板
+uv run toss send report.pdf prod        # 扔文件到服务器
+uv run toss send a.txt b.txt nas        # 一次扔多个
+uv run toss pull prod data.csv          # 从服务器拿文件
+uv run toss ls prod                     # 看服务器上有什么
+uv run toss list                        # 列出所有服务器
+uv run toss init                        # 创建配置模板
 ```
 
 ### MCP 模式

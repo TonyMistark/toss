@@ -1,20 +1,23 @@
 """配置加载、保存、校验。
 
-配置文件 ~/.toss/config.yaml，按 capability 分段：
-    file_transfer:
-      target_dir: ~/toss
-      servers:
-        prod:
-          host: 10.0.0.50
-          user: root
+配置文件 ~/.toss/config.json，按 capability 分段：
+{
+  "file_transfer": {
+    "target_dir": "~/toss",
+    "servers": {
+      "prod": {
+        "host": "10.0.0.50",
+        "user": "root"
+      }
+    }
+  }
+}
 """
 
+import json
 import os
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Optional
-
-import yaml
 
 
 # ── file_transfer 配置类型 ──────────────────────────────────────────
@@ -48,9 +51,8 @@ class Config:
 # ── 路径 & IO ───────────────────────────────────────────────────────
 
 def config_path() -> str:
-    """配置文件路径 ~/.toss/config.yaml"""
     home = os.environ.get("TOSS_HOME", os.path.expanduser("~"))
-    return os.path.join(home, ".toss", "config.yaml")
+    return os.path.join(home, ".toss", "config.json")
 
 
 def _dict_to_file_transfer_config(d: dict) -> FileTransferConfig:
@@ -77,7 +79,7 @@ def load_config() -> Config:
         )
 
     with open(path, "r") as f:
-        data = yaml.safe_load(f) or {}
+        data = json.load(f)
 
     ft_cfg = FileTransferConfig()
     if "file_transfer" in data:
@@ -94,27 +96,15 @@ def create_default_config(force: bool = False) -> str:
     if os.path.exists(path) and not force:
         return path
 
-    template = (
-        "# toss 配置文件\n"
-        "# \n"
-        "# 每个 capability 各自一个配置段，下面以 file_transfer 为例。\n"
-        "# 首次使用前请修改 servers 部分，填上你的服务器信息。\n"
-        "\n"
-        "# ── 文件传输 ──\n"
-        "file_transfer:\n"
-        "  target_dir: ~/toss          # 每个服务器上的收发目录\n"
-        "  servers:\n"
-        "    # prod:\n"
-        "    #   host: 10.0.0.50\n"
-        "    #   user: root\n"
-        "    #   port: 22\n"
-        "    #\n"
-        "    # nas:\n"
-        "    #   host: nas.local\n"
-        "    #   user: ice\n"
-    )
+    template = {
+        "file_transfer": {
+            "target_dir": "~/toss",
+            "servers": {}
+        }
+    }
 
     with open(path, "w") as f:
-        f.write(template)
+        json.dump(template, f, indent=2, ensure_ascii=False)
+        f.write("\n")
 
     return path
