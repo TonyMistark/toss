@@ -70,12 +70,23 @@ uv tool uninstall toss-mcp
       "nas": {
         "host": "nas.local",
         "user": "ice",
-        "port": 2222
+        "port": 2222,
+        "target_dir": "~/custom_path"
       }
     }
   }
 }
 ```
+
+`target_dir` 支持三级覆盖（优先级从高到低）：
+
+| 级别 | 位置 | 默认值 | 说明 |
+|------|------|--------|------|
+| 全局 | `file_transfer.target_dir` | `"~/toss"` | 所有服务器的默认收发目录 |
+| 服务器 | `file_transfer.servers.<name>.target_dir` | 继承全局 | 单个服务器覆盖全局目录 |
+| 调用时 | `send` 工具的 `target_dir` 参数 | 继承服务器/全局 | 仅 `send` 支持，优先级最高 |
+
+不设置服务器级 `target_dir` 时自动继承全局值。示例中 `prod` 使用全局的 `~/toss`，`nas` 使用独立的 `~/custom_path`。
 
 ## 使用方式
 
