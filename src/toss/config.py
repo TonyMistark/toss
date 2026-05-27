@@ -27,11 +27,12 @@ class ServerConfig:
     host: str
     user: str
     port: int = 22
+    target_dir: Optional[str] = None  # 覆盖全局 target_dir，不填则继承
 
 
 @dataclass
 class FileTransferConfig:
-    target_dir: str = "~/toss"
+    target_dir: str = "/tmp"
     servers: dict[str, ServerConfig] = field(default_factory=dict)
 
     def get_server(self, name: str) -> Optional[ServerConfig]:
@@ -62,6 +63,7 @@ def _dict_to_file_transfer_config(d: dict) -> FileTransferConfig:
             host=s["host"],
             user=s.get("user", ""),
             port=s.get("port", 22),
+            target_dir=s.get("target_dir"),
         )
     return FileTransferConfig(
         target_dir=d.get("target_dir", "~/toss"),
