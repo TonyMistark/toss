@@ -128,11 +128,14 @@ async def pull_file(s: ServerConfig, remote_file: str, output_dir: str, target_d
     output_dir = _expand(output_dir)
     os.makedirs(output_dir, exist_ok=True)
 
+    # 绝对路径直接用，相对路径拼 target_dir
+    remote_path = remote_file if remote_file.startswith("/") else target_dir + "/" + remote_file
+
     started = time.time()
     cmd = [
         "scp",
         *_scp_port_args(s),
-        _remote_target(s, target_dir + "/" + remote_file),
+        _remote_target(s, remote_path),
         output_dir + "/",
     ]
     rc, _, stderr = await _run(cmd)
@@ -144,8 +147,8 @@ async def pull_file(s: ServerConfig, remote_file: str, output_dir: str, target_d
             f"{err}\n提示：用 toss ls {_resolve_server_name(s)} 确认文件名是否正确"
         )
 
-    local_path = os.path.join(output_dir, remote_file)
-    return f"✓ {_remote_target(s, target_dir + '/' + remote_file)} → {local_path} ({elapsed:.1f}s)"
+    local_path = os.path.join(output_dir, os.path.basename(remote_file))
+    return f"✓ {_remote_target(s, remote_path)} → {local_path} ({elapsed:.1f}s)"
 
 
 # ── 远程列表 ────────────────────────────────────────────────────────

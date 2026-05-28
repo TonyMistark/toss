@@ -26,7 +26,7 @@ class SendInput(BaseModel):
 
 class PullInput(BaseModel):
     server: str = Field(..., description="服务器名称，如 'prod'、'nas'")
-    file: str = Field(..., description="远程文件名，如 'report.pdf'")
+    file: str = Field(..., description="远程文件路径，支持绝对路径（如 '/home/user/file.txt'）或相对于 target_dir 的文件名（如 'report.pdf'）")
     output: str = Field(default=".", description="本地保存目录，默认当前目录")
 
 
