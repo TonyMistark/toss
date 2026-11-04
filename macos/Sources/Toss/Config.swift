@@ -1,6 +1,6 @@
 import Foundation
 
-struct ServerConfig: Identifiable, Hashable {
+struct ServerConfig: Identifiable, Hashable, Codable {
     var name: String
     var host: String
     var user: String = ""

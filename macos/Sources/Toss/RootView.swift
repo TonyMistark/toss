@@ -15,7 +15,7 @@ struct RootView: View {
 
     var body: some View {
         ContentView(state: state)
-            .frame(minWidth: 880, minHeight: 580)
+            .frame(minWidth: 960, minHeight: 700)
             .environmentObject(services.profile)
             .crashPrompt(crashPrompt)
             .task { crashPrompt.offerIfNeeded() }

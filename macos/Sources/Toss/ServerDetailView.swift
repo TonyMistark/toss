@@ -3,6 +3,7 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 enum DetailTab: Hashable {
+    case throwFlow
     case send
     case pull
     case list
@@ -13,7 +14,7 @@ struct ServerDetailView: View {
     let server: ServerConfig
     let onEdit: () -> Void
 
-    @State private var tab: DetailTab = .send
+    @State private var tab: DetailTab = .throwFlow
 
     var body: some View {
         VStack(spacing: 0) {
@@ -21,6 +22,7 @@ struct ServerDetailView: View {
             Divider()
 
             Picker("", selection: $tab) {
+                Text(t("Throw")).tag(DetailTab.throwFlow)
                 Text(t("Send")).tag(DetailTab.send)
                 Text(t("Pull")).tag(DetailTab.pull)
                 Text(t("Files")).tag(DetailTab.list)
@@ -32,6 +34,8 @@ struct ServerDetailView: View {
 
             Group {
                 switch tab {
+                case .throwFlow:
+                    ThrowSourcePanel(state: state, server: server)
                 case .send:
                     ScrollView {
                         SendPanel(state: state, server: server)
@@ -45,10 +49,12 @@ struct ServerDetailView: View {
             .padding(.horizontal, 16)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
 
-            Divider()
-                .padding(.top, 12)
+            if tab != .throwFlow {
+                Divider()
+                    .padding(.top, 12)
 
-            OutputView(state: state)
+                OutputView(state: state)
+            }
         }
     }
 

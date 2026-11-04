@@ -10,6 +10,11 @@ final class AppState: ObservableObject {
     @Published private(set) var configExists: Bool
 
     let transfer = TransferService()
+    let throwing = ThrowService()
+    let queue = TransferQueue()
+
+    /// 松手后等待确认的投递；由 `ContentView` 的 sheet 展示。
+    @Published var pendingThrow: PendingThrow?
 
     init() {
         let loaded = TossConfig.load()
@@ -29,6 +34,55 @@ final class AppState: ObservableObject {
 
     func effectiveTargetDir(for server: ServerConfig) -> String {
         config.effectiveTargetDir(for: server)
+    }
+
+    var localDeliveryDir: String { LocalDelivery.directory }
+
+    /// 松手后先记下待确认的投递，不直接开始传输。
+    /// 只接受来自当前配置里真实存在的服务器，防止伪造的拖拽数据。
+    func beginThrow(payload: ThrowPayload, target: ThrowTarget) {
+        guard !payload.entries.isEmpty,
+              let known = servers.first(where: { $0.name == payload.source.name }),
+              known == payload.source
+        else { return }
+
+        let directory: String
+        switch target {
+        case .server(let server):
+            directory = effectiveTargetDir(for: server)
+        case .local:
+            directory = LocalDelivery.directory
+        }
+
+        pendingThrow = PendingThrow(payload: payload, target: target, targetDir: directory)
+    }
+
+    func confirmThrow(_ pending: PendingThrow, targetDir: String) {
+        let trimmed = targetDir.trimmed
+        guard !trimmed.isEmpty else { return }
+
+        queue.enqueue(TransferJob(
+            source: pending.payload.source,
+            sourceDir: pending.payload.sourceDir,
+            target: pending.target,
+            targetDir: trimmed,
+            entries: pending.payload.entries
+        ))
+        pendingThrow = nil
+    }
+
+    func setLocalDeliveryDir(_ value: String) throws {
+        let trimmed = value.trimmed
+        let expanded = (trimmed as NSString).expandingTildeInPath
+        guard expanded.hasPrefix("/") else {
+            throw TossError(t("Enter an absolute path, or one starting with ~"))
+        }
+
+        try FileManager.default.createDirectory(
+            at: URL(fileURLWithPath: expanded),
+            withIntermediateDirectories: true
+        )
+        LocalDelivery.setDirectory(trimmed)
     }
 
     func reload() {
