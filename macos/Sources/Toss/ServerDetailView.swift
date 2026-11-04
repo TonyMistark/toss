@@ -472,10 +472,8 @@ struct PullPanel: View {
     let server: ServerConfig
 
     @State private var remoteFile = ""
-    @State private var outputDir: URL = FileManager.default.urls(
-        for: .downloadsDirectory,
-        in: .userDomainMask
-    ).first ?? FileManager.default.homeDirectoryForCurrentUser
+    @State private var outputDirText = PullPanel.defaultOutputDir.path
+    @State private var pathMessage: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -486,21 +484,41 @@ struct PullPanel: View {
                 Text(t("Save to"))
                     .font(.callout)
                     .foregroundStyle(.secondary)
-                Text(outputDir.path)
-                    .font(.callout)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                    .textSelection(.enabled)
-                Spacer()
-                Button(t("Choose…")) {
-                    if let url = FileChooser.chooseDirectory(
-                        title: t("Choose a folder to save into"),
-                        prompt: t("Choose")
-                    ) {
-                        outputDir = url
+
+                HStack(spacing: 4) {
+                    TextField("", text: $outputDirText, prompt: Text(PullPanel.defaultOutputDir.path))
+                        .textFieldStyle(.plain)
+                        .labelsHidden()
+                        .accessibilityLabel(t("Save to"))
+                    Button {
+                        chooseOutputDir()
+                    } label: {
+                        Image(systemName: "folder")
+                            .foregroundStyle(.secondary)
                     }
+                    .buttonStyle(.plain)
+                    .help(t("Choose a folder to save into"))
+                    .disabled(state.busy)
                 }
-                .disabled(state.busy)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 5)
+                .background(
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(Color(nsColor: .textBackgroundColor))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6)
+                        .strokeBorder(Color.secondary.opacity(0.35), lineWidth: 1)
+                )
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                Spacer(minLength: 0)
+            }
+
+            if let pathMessage {
+                Text(pathMessage)
+                    .font(.caption)
+                    .foregroundStyle(.red)
             }
 
             HStack {
@@ -519,9 +537,60 @@ struct PullPanel: View {
         }
     }
 
+    private static var defaultOutputDir: URL {
+        FileManager.default.urls(
+            for: .downloadsDirectory,
+            in: .userDomainMask
+        ).first ?? FileManager.default.homeDirectoryForCurrentUser
+    }
+
+    private func chooseOutputDir() {
+        if let url = FileChooser.chooseDirectory(
+            title: t("Choose a folder to save into"),
+            prompt: t("Choose")
+        ) {
+            outputDirText = url.path
+            pathMessage = nil
+        }
+    }
+
+    private func resolvedOutputDir() -> URL? {
+        let trimmed = outputDirText.trimmed
+        if trimmed.isEmpty {
+            outputDirText = Self.defaultOutputDir.path
+            pathMessage = nil
+            return Self.defaultOutputDir
+        }
+
+        let expanded = (trimmed as NSString).expandingTildeInPath
+        guard expanded.hasPrefix("/") else {
+            pathMessage = t("Enter an absolute path, or one starting with ~")
+            return nil
+        }
+
+        let url = URL(fileURLWithPath: expanded).standardizedFileURL
+        var isDirectory: ObjCBool = false
+        if FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory) {
+            guard isDirectory.boolValue else {
+                pathMessage = t("The save location is not a folder: {}", url.path)
+                return nil
+            }
+        } else {
+            do {
+                try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+            } catch {
+                pathMessage = t("Could not create the save location: {}", error.localizedDescription)
+                return nil
+            }
+        }
+
+        pathMessage = nil
+        return url
+    }
+
     private func pull() {
+        guard let directory = resolvedOutputDir() else { return }
         let file = remoteFile.trimmed
-        let directory = outputDir
         let targetDir = state.effectiveTargetDir(for: server)
         let currentServer = server
         state.run {
