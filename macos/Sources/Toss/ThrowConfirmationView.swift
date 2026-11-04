@@ -15,46 +15,50 @@ struct ThrowConfirmationView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 16) {
             header
 
+            Divider()
+                .opacity(0.6)
+
             ScrollView {
-                VStack(spacing: 6) {
-                    ForEach(pending.payload.entries) { entry in
-                        HStack(spacing: 8) {
-                            Image(systemName: entry.isDirectory ? "folder.fill" : "doc.fill")
-                                .foregroundStyle(.secondary)
-                            Text(entry.name)
-                                .lineLimit(1)
-                                .truncationMode(.middle)
-                            Spacer()
-                            Text(entry.sizeText)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+                VStack(spacing: 0) {
+                    ForEach(Array(pending.payload.entries.enumerated()), id: \.element.id) { index, entry in
+                        entryRow(entry)
+                        if index < pending.payload.entries.count - 1 {
+                            Divider()
+                                .opacity(0.5)
+                                .padding(.leading, 26)
                         }
-                        .padding(.vertical, 3)
-                        Divider()
                     }
                 }
             }
             .frame(maxHeight: .infinity)
 
-            HStack {
-                Text(t("Total"))
-                    .foregroundStyle(.secondary)
-                Spacer()
-                Text(ByteCount.format(pending.payload.totalBytes))
-                    .monospacedDigit()
-            }
-            .font(.callout)
-
-            Text(pending.mode.label)
-                .font(.caption)
+            HStack(alignment: .firstTextBaseline, spacing: 12) {
+                Label(
+                    pending.mode.label,
+                    systemImage: pending.mode == .direct ? "doc" : "archivebox"
+                )
+                .font(.caption2)
                 .foregroundStyle(.secondary)
+                .lineLimit(2)
+
+                Spacer()
+
+                HStack(spacing: 6) {
+                    Text(t("Total"))
+                        .foregroundStyle(.secondary)
+                    Text(ByteCount.format(pending.payload.totalBytes))
+                        .monospacedDigit()
+                        .fontWeight(.medium)
+                }
+                .font(.callout)
+            }
 
             VStack(alignment: .leading, spacing: 6) {
                 Text(pending.target.isLocal ? t("Local folder") : t("Remote folder"))
-                    .font(.caption)
+                    .font(.caption2)
                     .foregroundStyle(.secondary)
                 HStack(spacing: 8) {
                     TextField("", text: $targetDir)
@@ -75,12 +79,12 @@ struct ThrowConfirmationView: View {
             }
 
             if let error {
-                Text(error)
+                Label(error, systemImage: "exclamationmark.circle.fill")
                     .font(.caption)
                     .foregroundStyle(.red)
             }
 
-            HStack {
+            HStack(spacing: 12) {
                 Spacer()
                 Button(t("Cancel")) {
                     state.pendingThrow = nil
@@ -91,14 +95,18 @@ struct ThrowConfirmationView: View {
                     confirm()
                 }
                 .keyboardShortcut(.defaultAction)
+                .buttonStyle(.borderedProminent)
+                .tint(Brand.green)
             }
+            .controlSize(.large)
         }
-        .padding(20)
-        .frame(width: 520, height: 520)
+        .padding(24)
+        .frame(width: 480, height: 500)
+        .background(Color(nsColor: .windowBackgroundColor))
     }
 
     private var header: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 12) {
             endpoint(
                 icon: "server.rack",
                 title: pending.payload.source.name,
@@ -106,8 +114,8 @@ struct ThrowConfirmationView: View {
             )
 
             Image(systemName: "arrow.right")
-                .font(.title3)
-                .foregroundStyle(Brand.green)
+                .font(.callout)
+                .foregroundStyle(.tertiary)
 
             endpoint(
                 icon: pending.target.isLocal ? "laptopcomputer" : "server.rack",
@@ -117,31 +125,50 @@ struct ThrowConfirmationView: View {
                     : pending.target.server?.address ?? ""
             )
 
-            Spacer()
+            Spacer(minLength: 0)
         }
     }
 
     private func endpoint(icon: String, title: String, subtitle: String) -> some View {
-        HStack(spacing: 8) {
-            Image(systemName: icon)
-                .font(.system(size: 18, weight: .medium))
-                .foregroundStyle(Brand.green)
-            VStack(alignment: .leading, spacing: 2) {
+        HStack(spacing: 9) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(Brand.green.opacity(0.10))
+                    .frame(width: 30, height: 30)
+                Image(systemName: icon)
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(Brand.green)
+            }
+
+            VStack(alignment: .leading, spacing: 1) {
                 Text(title)
                     .font(.headline)
                 Text(subtitle)
-                    .font(.caption)
+                    .font(.caption2)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .truncationMode(.middle)
             }
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
-        .background(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(Color.secondary.opacity(0.07))
-        )
+        .frame(minWidth: 0, alignment: .leading)
+    }
+
+    private func entryRow(_ entry: ThrowEntry) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: entry.isDirectory ? "folder" : "doc")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .frame(width: 18, alignment: .leading)
+            Text(entry.name)
+                .lineLimit(1)
+                .truncationMode(.middle)
+            Spacer(minLength: 8)
+            Text(entry.sizeText)
+                .font(.caption)
+                .monospacedDigit()
+                .foregroundStyle(.secondary)
+        }
+        .padding(.vertical, 6)
     }
 
     private func chooseLocalFolder() {

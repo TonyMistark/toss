@@ -9,17 +9,24 @@ struct TransferQueueView: View {
     var body: some View {
         VStack(spacing: 0) {
             header
-                .padding(.horizontal, 16)
-                .padding(.vertical, 7)
+                .padding(.horizontal, 20)
+                .padding(.vertical, 8)
 
             Divider()
+                .opacity(0.6)
 
             if expanded {
                 if queue.jobs.isEmpty {
-                    Text(t("No transfers yet"))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    VStack(spacing: 6) {
+                        Image(systemName: "arrow.up.arrow.down")
+                            .font(.system(size: 18))
+                            .symbolRenderingMode(.hierarchical)
+                            .foregroundStyle(.tertiary)
+                        Text(t("No transfers yet"))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
                     ScrollView {
                         VStack(spacing: 0) {
@@ -31,16 +38,17 @@ struct TransferQueueView: View {
                 }
             }
         }
-        .frame(height: expanded ? (queue.jobs.isEmpty ? 96 : 196) : 36)
-        .background(Color(nsColor: .windowBackgroundColor))
+        .frame(height: expanded ? (queue.jobs.isEmpty ? 86 : 196) : 36)
+        .background(.regularMaterial)
     }
 
     private var header: some View {
         HStack(spacing: 8) {
-            Image(systemName: "arrow.up.arrow.down.circle")
+            Image(systemName: "arrow.up.arrow.down")
+                .font(.caption)
                 .foregroundStyle(.secondary)
             Text(t("Transfers"))
-                .font(.headline)
+                .font(.subheadline.weight(.semibold))
 
             if queue.activeCount > 0 {
                 ProgressView()
@@ -53,8 +61,9 @@ struct TransferQueueView: View {
                 Button(t("Clear finished")) {
                     queue.clearFinished()
                 }
-                .buttonStyle(.borderless)
+                .buttonStyle(.plain)
                 .font(.caption)
+                .foregroundStyle(.secondary)
             }
 
             Button {
@@ -63,9 +72,10 @@ struct TransferQueueView: View {
                 }
             } label: {
                 Image(systemName: expanded ? "chevron.down" : "chevron.up")
+                    .font(.caption)
                     .foregroundStyle(.secondary)
             }
-            .buttonStyle(.borderless)
+            .buttonStyle(.plain)
             .help(t("Collapse or expand the transfer queue"))
         }
     }
@@ -79,16 +89,15 @@ private struct TransferJobRow: View {
         HStack(alignment: .top, spacing: 10) {
             stageIcon
 
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 8) {
                     Text(job.title)
-                        .font(.callout)
-                        .bold()
+                        .font(.callout.weight(.medium))
                         .lineLimit(1)
                         .truncationMode(.middle)
                     Spacer()
                     Text(job.stage.label)
-                        .font(.caption)
+                        .font(.caption2)
                         .foregroundStyle(stageColor)
                 }
 
@@ -107,15 +116,17 @@ private struct TransferJobRow: View {
                         .monospacedDigit()
                 }
                 .font(.caption2)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(.tertiary)
 
                 if job.stage.isActive {
                     if let progress = job.progress {
                         ProgressView(value: progress)
                             .progressViewStyle(.linear)
+                            .tint(Brand.green)
                     } else {
                         ProgressView()
                             .progressViewStyle(.linear)
+                            .tint(Brand.green)
                     }
                 }
 
@@ -130,11 +141,12 @@ private struct TransferJobRow: View {
 
             actions
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 8)
+        .padding(.horizontal, 20)
+        .padding(.vertical, 9)
         .overlay(alignment: .bottom) {
             Divider()
-                .padding(.leading, 16)
+                .opacity(0.5)
+                .padding(.leading, 48)
         }
     }
 
@@ -143,22 +155,28 @@ private struct TransferJobRow: View {
             switch job.stage {
             case .queued:
                 Image(systemName: "clock")
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: 13))
+                    .foregroundStyle(.tertiary)
             case .packing, .transferring, .unpacking, .verifying:
                 ProgressView()
                     .controlSize(.small)
             case .finished:
                 Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 13))
+                    .symbolRenderingMode(.hierarchical)
                     .foregroundStyle(Brand.green)
             case .failed:
-                Image(systemName: "exclamationmark.triangle.fill")
+                Image(systemName: "exclamationmark.circle.fill")
+                    .font(.system(size: 13))
+                    .symbolRenderingMode(.hierarchical)
                     .foregroundStyle(.red)
             case .cancelled:
-                Image(systemName: "xmark.circle")
-                    .foregroundStyle(.secondary)
+                Image(systemName: "slash.circle")
+                    .font(.system(size: 13))
+                    .foregroundStyle(.tertiary)
             }
         }
-        .frame(width: 20)
+        .frame(width: 18)
         .padding(.top, 2)
     }
 
@@ -172,26 +190,43 @@ private struct TransferJobRow: View {
 
     @ViewBuilder
     private var actions: some View {
-        VStack(spacing: 4) {
+        VStack(spacing: 6) {
             if job.stage.isActive || job.stage == .queued {
-                Button(t("Cancel")) {
+                iconButton("xmark", label: t("Cancel")) {
                     queue.cancel(job.id)
                 }
-                .buttonStyle(.borderless)
-                .font(.caption)
             } else if job.stage == .failed || job.stage == .cancelled {
-                Button(t("Retry")) {
+                iconButton("arrow.clockwise", label: t("Retry")) {
                     queue.retry(job.id)
                 }
-                .buttonStyle(.borderless)
-                .font(.caption)
             } else if job.stage == .finished {
-                Button(job.target.isLocal ? t("Open") : t("Copy path")) {
-                    queue.openDestination(of: job.id)
+                if job.target.isLocal {
+                    iconButton("folder", label: t("Open")) {
+                        queue.openDestination(of: job.id)
+                    }
+                } else {
+                    iconButton("doc.on.doc", label: t("Copy path")) {
+                        queue.openDestination(of: job.id)
+                    }
                 }
-                .buttonStyle(.borderless)
-                .font(.caption)
             }
         }
+    }
+
+    private func iconButton(
+        _ symbol: String,
+        label: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+                .frame(width: 18, height: 18)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(label)
+        .accessibilityLabel(label)
     }
 }
