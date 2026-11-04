@@ -26,24 +26,39 @@ struct ThrowDockView: View {
                 .padding(.horizontal, 16)
                 .padding(.top, 10)
 
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 16) {
-                    ForEach(targets) { target in
-                        ThrowTargetCard(state: state, target: target)
+            GeometryReader { geometry in
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 16) {
+                        ForEach(targets) { target in
+                            ThrowTargetCard(
+                                state: state,
+                                target: target,
+                                width: cardWidth(available: geometry.size.width)
+                            )
+                        }
                     }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
                 }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 10)
             }
         }
         .frame(height: 186)
         .background(Color(nsColor: .windowBackgroundColor))
+    }
+
+    private func cardWidth(available: CGFloat) -> CGFloat {
+        let count = CGFloat(max(targets.count, 1))
+        let spacing: CGFloat = 16
+        let padding: CGFloat = 32
+        let proposed = (available - padding - spacing * (count - 1)) / count
+        return max(150, min(210, proposed))
     }
 }
 
 private struct ThrowTargetCard: View {
     @ObservedObject var state: AppState
     let target: ThrowTarget
+    let width: CGFloat
 
     @State private var isTargeted = false
 
@@ -87,7 +102,7 @@ private struct ThrowTargetCard: View {
                 .foregroundStyle(isTargeted ? Brand.green : Color.secondary.opacity(0.8))
         }
         .padding(.horizontal, 12)
-        .frame(width: 210, height: 108)
+        .frame(width: width, height: 108)
         .background(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .fill(isTargeted ? Brand.green.opacity(0.10) : Color(nsColor: .controlBackgroundColor))
@@ -110,7 +125,7 @@ private struct ThrowTargetCard: View {
     private func backingCard(scale: CGFloat, offset: CGFloat, opacity: Double) -> some View {
         RoundedRectangle(cornerRadius: 14, style: .continuous)
             .fill(Color(nsColor: .controlBackgroundColor))
-            .frame(width: 210, height: 108)
+            .frame(width: width, height: 108)
             .scaleEffect(x: scale, y: scale)
             .offset(y: offset)
             .opacity(opacity)
