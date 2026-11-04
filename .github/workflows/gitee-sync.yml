@@ -1,0 +1,61 @@
+name: Sync to Gitee
+
+# GitHub Release 发布后自动把 tag / 标题 / 说明 / dmg 镜像到 Gitee。
+# 幂等：tag 已在就跳过，release 已在就复用，同名附件已在就不重传。
+#
+# 为什么同时监听 workflow_run：Release workflow 用 GITHUB_TOKEN 创建 release，
+# GitHub 不会用该 token 触发的 release 事件再启动新 workflow；workflow_run
+# 能可靠地在 Release 完成后接力，且失败不反过来挡住 GitHub 发布。
+#
+# 一次性配置：
+#   gh secret set GITEE_TOKEN -R TonyMistark/toss
+# 没配 Secret 时脚本打印指引并以 0 退出，不会挂红。
+#
+# 手动补跑：Actions → Sync to Gitee → Run workflow（填 tag）。
+# 本机批量补齐：./sync-gitee-all.sh
+
+on:
+  release:
+    types: [published]
+  workflow_run:
+    workflows: ["Release"]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "要同步的 Release tag（如 v1.2.0）；留空取最新 release"
+        required: false
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: gitee-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Sync release to Gitee
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+        run: |
+          chmod +x sync-gitee-release.sh
+          TAG="${{ github.event.release.tag_name || inputs.tag || github.event.workflow_run.head_branch }}"
+          case "$TAG" in
+            v*) ;;
+            *) TAG="$(gh release view --json tagName --jq .tagName)" ;;
+          esac
+          ./sync-gitee-release.sh "$TAG"

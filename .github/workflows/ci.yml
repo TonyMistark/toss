@@ -47,6 +47,12 @@ jobs:
           swift --version
           xcodebuild -version
 
+      - name: Lint shell scripts
+        working-directory: .
+        run: |
+          sh -n sync-gitee-release.sh sync-gitee-all.sh
+          bash -n scripts/*.sh
+
       - name: Build
         run: swift build --disable-sandbox
 

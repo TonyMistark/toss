@@ -41,8 +41,3 @@ jobs:
               --notes "Toss $VERSION" \
               --latest
           fi
-
-      - name: Sync release to Gitee
-        env:
-          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
-        run: ./scripts/sync_gitee_release.sh
