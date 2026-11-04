@@ -54,6 +54,48 @@ uv tool uninstall toss-mcp
 
 注册后重启 Claude Code，toss 的工具就会出现在 AI 可调用的工具列表中。
 
+## Mac App
+
+原生 SwiftUI 版，和 CLI 共用同一份 `~/.toss/config.json`，命令行功能保持不变。
+
+```bash
+./scripts/build_app.sh        # 生成 build/Toss.app
+open build/Toss.app           # 运行
+```
+
+把 `build/Toss.app` 拖进「应用程序」即可长期使用。
+
+功能：
+
+- 服务器配置增删改（名称、主机、用户、端口、独立收发目录）
+- 全局收发目录设置
+- 发送文件或目录：支持拖拽、选择文件/文件夹、手动粘贴路径三种方式；文件夹自动打包为 tar.gz
+- 拉取远程文件（支持绝对路径或相对收发目录）
+- 查看远程收发目录的文件列表
+
+App 直接调用系统 `scp` / `ssh`，前置条件与 CLI 相同（SSH 密钥免密登录）。GUI 进程没有终端，因此使用 `BatchMode=yes` 快速失败，并用 `StrictHostKeyChecking=accept-new` 自动接受首次连接的主机指纹。
+
+### 发布与更新
+
+版本号以 `macos/Info.plist` 的 `CFBundleShortVersionString` 为准，Release tag 必须是 `v<版本号>`
+（例如 `v0.1.0`）。安装包命名为 `dist/toss-<版本号>.dmg`。
+
+```bash
+# 本地打包
+TOSS_VERSION=0.1.0 ./scripts/build_app.sh
+VERSION=0.1.0 ./scripts/package_dmg.sh
+
+# 发布：推 tag 后 GitHub Actions 自动测试、构建、创建 GitHub Release
+git tag v0.1.0
+git push origin v0.1.0
+
+# 同一份 dmg 也会上传到 Gitee，供 GitHub 下载失败时回退
+# 需要在仓库 Settings → Secrets 中配置 GITEE_TOKEN
+```
+
+App 内置更新器会同时查 GitHub 与 Gitee（`TonyMistark/toss` / `Micestark/toss`），
+优先 GitHub；GitHub 检查或下载失败时自动换到 Gitee。安装前一定会弹出确认。
+
 ## 配置
 
 配置文件 `~/.toss/config.json`，首次使用前运行 `toss init` 创建模板：
@@ -61,7 +103,7 @@ uv tool uninstall toss-mcp
 ```json
 {
   "file_transfer": {
-    "target_dir": "~/toss",
+    "target_dir": "~/.toss",
     "servers": {
       "prod": {
         "host": "10.0.0.50",
@@ -82,11 +124,11 @@ uv tool uninstall toss-mcp
 
 | 级别 | 位置 | 默认值 | 说明 |
 |------|------|--------|------|
-| 全局 | `file_transfer.target_dir` | `"~/toss"` | 所有服务器的默认收发目录 |
+| 全局 | `file_transfer.target_dir` | `"~/.toss"` | 所有服务器的默认收发目录 |
 | 服务器 | `file_transfer.servers.<name>.target_dir` | 继承全局 | 单个服务器覆盖全局目录 |
 | 调用时 | `send` 工具的 `target_dir` 参数 | 继承服务器/全局 | 仅 `send` 支持，优先级最高 |
 
-不设置服务器级 `target_dir` 时自动继承全局值。示例中 `prod` 使用全局的 `~/toss`，`nas` 使用独立的 `~/custom_path`。
+不设置服务器级 `target_dir` 时自动继承全局值。示例中 `prod` 使用全局的 `~/.toss`，`nas` 使用独立的 `~/custom_path`。
 
 ## 使用方式
 

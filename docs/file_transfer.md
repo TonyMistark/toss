@@ -7,7 +7,7 @@
 ```json
 {
   "file_transfer": {
-    "target_dir": "~/toss",
+    "target_dir": "~/.toss",
     "servers": {
       "prod": {
         "host": "10.0.0.50",
@@ -28,7 +28,7 @@
 ## 前置条件
 
 1. 本机可通过 `ssh` / `scp` 免密登录目标服务器（密钥已配置）
-2. 每个目标服务器上已创建对应的 `target_dir` 目录（默认 `~/toss/`）
+2. 每个目标服务器上已创建对应的 `target_dir` 目录（默认 `~/.toss/`）
 
 ## CLI 命令
 
@@ -94,7 +94,7 @@ uv run toss init
 返回示例：
 
 ```
-✓ 已发送到 root@10.0.0.50:~/toss/ (0.8s)
+✓ 已发送到 root@10.0.0.50:~/.toss/ (0.8s)
   report.pdf、data.csv
 ```
 
@@ -109,7 +109,7 @@ uv run toss init
 返回示例：
 
 ```
-✓ root@nas.local:~/toss/data.csv → ./data.csv (0.3s)
+✓ root@nas.local:~/.toss/data.csv → ./data.csv (0.3s)
 ```
 
 ### ls
@@ -121,7 +121,7 @@ uv run toss init
 返回示例：
 
 ```
-root@nas.local:~/toss/
+root@nas.local:~/.toss/
 total 2.1G
 -rw-r--r--  1 ice  staff  2.1G  5 16 10:00 backup.tar.gz
 -rw-r--r--  1 ice  staff  3.4K  5 15 09:30 nginx.conf

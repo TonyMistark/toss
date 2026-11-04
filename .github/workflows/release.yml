@@ -1,0 +1,46 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read version from tag
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+
+      - name: Run tests
+        working-directory: macos
+        run: swift test
+
+      - name: Build app
+        run: TOSS_VERSION="$VERSION" ./scripts/build_app.sh
+
+      - name: Package dmg
+        run: VERSION="$VERSION" ./scripts/package_dmg.sh
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          DMG="dist/toss-$VERSION.dmg"
+          test -f "$DMG"
+          if gh release view "v$VERSION" >/dev/null 2>&1; then
+            gh release upload "v$VERSION" "$DMG" --clobber
+          else
+            gh release create "v$VERSION" "$DMG" \
+              --title "Toss $VERSION" \
+              --notes "Toss $VERSION"
+          fi
+
+      - name: Sync release to Gitee
+        env:
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+        run: ./scripts/sync_gitee_release.sh

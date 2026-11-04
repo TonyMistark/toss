@@ -96,7 +96,7 @@ def _do_init_config() -> str:
         f"请编辑此文件，在 file_transfer.servers 下添加服务器信息。示例：\n"
         f'{{\n'
         f'  "file_transfer": {{\n'
-        f'    "target_dir": "~/toss",\n'
+        f'    "target_dir": "~/.toss",\n'
         f'    "servers": {{\n'
         f'      "prod": {{"host": "10.0.0.50", "user": "root"}}\n'
         f'    }}\n'

@@ -3,7 +3,7 @@
 配置文件 ~/.toss/config.json，按 capability 分段：
 {
   "file_transfer": {
-    "target_dir": "~/toss",
+    "target_dir": "~/.toss",
     "servers": {
       "prod": {
         "host": "10.0.0.50",
@@ -32,7 +32,7 @@ class ServerConfig:
 
 @dataclass
 class FileTransferConfig:
-    target_dir: str = "/tmp"
+    target_dir: str = "~/.toss"
     servers: dict[str, ServerConfig] = field(default_factory=dict)
 
     def get_server(self, name: str) -> Optional[ServerConfig]:
@@ -66,7 +66,7 @@ def _dict_to_file_transfer_config(d: dict) -> FileTransferConfig:
             target_dir=s.get("target_dir"),
         )
     return FileTransferConfig(
-        target_dir=d.get("target_dir", "~/toss"),
+        target_dir=d.get("target_dir", "~/.toss"),
         servers=servers,
     )
 
@@ -100,7 +100,7 @@ def create_default_config(force: bool = False) -> str:
 
     template = {
         "file_transfer": {
-            "target_dir": "~/toss",
+            "target_dir": "~/.toss",
             "servers": {}
         }
     }
