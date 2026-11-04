@@ -51,7 +51,7 @@ RELEASE_ID="$(read_release_id)"
 
 if [[ -z "$RELEASE_ID" ]]; then
   if [[ "$STATUS" != "200" && "$STATUS" != "404" ]]; then
-    echo "✗ 查询 Gitee Release 失败（HTTP $STATUS）：" >&2
+    echo "✗ 查询 Gitee Release 失败（HTTP ${STATUS}）：" >&2
     cat "$TMP_JSON" >&2
     exit 1
   fi
@@ -62,19 +62,19 @@ if [[ -z "$RELEASE_ID" ]]; then
     --data-urlencode "target_commitish=main" \
     --data-urlencode "body=Release ${TAG}")"
   if [[ "$STATUS" != "200" && "$STATUS" != "201" ]]; then
-    echo "✗ 创建 Gitee Release 失败（HTTP $STATUS）：" >&2
+    echo "✗ 创建 Gitee Release 失败（HTTP ${STATUS}）：" >&2
     cat "$TMP_JSON" >&2
     exit 1
   fi
   RELEASE_ID="$(read_release_id)"
   if [[ -z "$RELEASE_ID" ]]; then
-    echo "✗ 创建响应里没有 release id（HTTP $STATUS）：" >&2
+    echo "✗ 创建响应里没有 release id（HTTP ${STATUS}）：" >&2
     cat "$TMP_JSON" >&2
     exit 1
   fi
-  echo "  已创建 Release（id=$RELEASE_ID）"
+  echo "  已创建 Release（id=${RELEASE_ID}）"
 else
-  echo "  复用已有 Release（id=$RELEASE_ID）"
+  echo "  复用已有 Release（id=${RELEASE_ID}）"
 fi
 
 HAS_ASSET="$(python3 - "$TMP_JSON" "$ASSET_NAME" <<'PY'
@@ -101,7 +101,7 @@ else
     -F "access_token=${GITEE_TOKEN}" \
     -F "file=@${DMG_PATH}")"
   if [[ "$STATUS" != "200" && "$STATUS" != "201" ]]; then
-    echo "✗ 上传附件失败（HTTP $STATUS）：" >&2
+    echo "✗ 上传附件失败（HTTP ${STATUS}）：" >&2
     cat "$TMP_JSON" >&2
     exit 1
   fi
