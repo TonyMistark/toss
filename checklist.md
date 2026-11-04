@@ -26,15 +26,15 @@
 - [x] Gitee 仓库 API 可访问（HTTP 200）。
 - [x] Release workflow 已就绪（`v*` tag 触发）。
 - [x] 已推送 `v0.1.0` tag，GitHub Release 发布成功。
-- [ ] GitHub Secrets 配置 `GITEE_TOKEN`（需用户在仓库设置里完成）。
-- [ ] 配置 token 后重跑 Release workflow，补齐 Gitee Release 与 dmg 附件。
+- [x] GitHub Secrets 已配置 `GITEE_TOKEN`。
+- [x] 重跑 Release workflow 成功，Gitee Release 已包含 `toss-0.1.0.dmg`。
 
 ## 发布链
 
 - [x] `dist/` 只保留当前版本 dmg。
 - [x] Release 创建时标记 `--latest`。
 - [x] 发布前隔离冒烟：DMG 可启动、轨迹首行正常、无崩溃报告。
-- [ ] Gitee 双源附件（等待 `GITEE_TOKEN`）。
+- [x] Gitee 双源附件（`toss-0.1.0.dmg` 已上传）。
 
 ## 需用户本机确认的视觉项
 
