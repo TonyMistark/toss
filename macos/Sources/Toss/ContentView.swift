@@ -18,6 +18,8 @@ enum ServerEditorTarget: Identifiable {
 struct ContentView: View {
     @ObservedObject var state: AppState
 
+    @EnvironmentObject private var profile: ProfileStore
+
     @State private var editorTarget: ServerEditorTarget?
 
     var body: some View {
@@ -42,13 +44,19 @@ struct ContentView: View {
                 .help(t("Reload ~/.toss/config.json"))
             }
 
-            ToolbarItemGroup(placement: .primaryAction) {
+            ToolbarItem(placement: .primaryAction) {
                 Button {
                     SettingsWindow.open()
                 } label: {
-                    Label(t("Settings"), systemImage: "gearshape")
+                    ProfileAvatar(
+                        image: profile.avatar,
+                        initial: profile.initial,
+                        size: 24
+                    )
                 }
-                .help(t("Settings"))
+                .buttonStyle(.plain)
+                .help(profile.hasNickname ? profile.nickname : t("Settings"))
+                .accessibilityLabel(t("Settings"))
             }
         }
         .sheet(item: $editorTarget) { target in
