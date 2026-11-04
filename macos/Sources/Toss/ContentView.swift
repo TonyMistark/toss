@@ -117,10 +117,18 @@ struct ContentView: View {
     private var detail: some View {
         Group {
             if let server = state.selectedServer {
-                ServerDetailView(state: state, server: server) {
-                    editorTarget = .edit(server)
+                VStack(spacing: 0) {
+                    ServerDetailView(state: state, server: server) {
+                        editorTarget = .edit(server)
+                    }
+                    .id(server.name)
+
+                    Divider()
+                    ThrowDockView(state: state, source: server)
+
+                    Divider()
+                    TransferQueueView(queue: state.queue)
                 }
-                .id(server.name)
             } else {
                 VStack(spacing: 12) {
                     Image(systemName: "shippingbox")
@@ -136,6 +144,9 @@ struct ContentView: View {
             }
         }
         .frame(minWidth: 600)
+        .sheet(item: $state.pendingThrow) { pending in
+            ThrowConfirmationView(state: state, pending: pending)
+        }
     }
 }
 
