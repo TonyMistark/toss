@@ -29,14 +29,32 @@ trap 'rm -f "$TMP_JSON"' EXIT
 
 echo "→ 同步 $TAG / $ASSET_NAME 到 Gitee ${GITEE_OWNER}/${GITEE_REPO}"
 
+# Gitee 有时对不存在的 tag 回 HTTP 200 + `null` body（而不是 404），
+# 刚推完 tag 的一段索引窗口里也会这样。所以「是否存在」只看响应体里
+# 有没有 id，HTTP 状态只用来兜底报错。
+read_release_id() {
+  python3 - "$TMP_JSON" <<'PY'
+import json, sys
+try:
+    data = json.load(open(sys.argv[1]))
+except Exception:
+    print("")
+else:
+    print(str(data["id"]) if isinstance(data, dict) and "id" in data else "")
+PY
+}
+
 STATUS="$(curl -sS -o "$TMP_JSON" -w '%{http_code}' \
   "${API}/releases/tags/${TAG}?access_token=${GITEE_TOKEN}")"
 
-RELEASE_ID=""
-if [[ "$STATUS" == "200" ]]; then
-  RELEASE_ID="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["id"])' "$TMP_JSON")"
-  echo "  复用已有 Release（id=$RELEASE_ID）"
-elif [[ "$STATUS" == "404" ]]; then
+RELEASE_ID="$(read_release_id)"
+
+if [[ -z "$RELEASE_ID" ]]; then
+  if [[ "$STATUS" != "200" && "$STATUS" != "404" ]]; then
+    echo "✗ 查询 Gitee Release 失败（HTTP $STATUS）：" >&2
+    cat "$TMP_JSON" >&2
+    exit 1
+  fi
   STATUS="$(curl -sS -o "$TMP_JSON" -w '%{http_code}' -X POST "${API}/releases" \
     --data-urlencode "access_token=${GITEE_TOKEN}" \
     --data-urlencode "tag_name=${TAG}" \
@@ -48,12 +66,15 @@ elif [[ "$STATUS" == "404" ]]; then
     cat "$TMP_JSON" >&2
     exit 1
   fi
-  RELEASE_ID="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["id"])' "$TMP_JSON")"
+  RELEASE_ID="$(read_release_id)"
+  if [[ -z "$RELEASE_ID" ]]; then
+    echo "✗ 创建响应里没有 release id（HTTP $STATUS）：" >&2
+    cat "$TMP_JSON" >&2
+    exit 1
+  fi
   echo "  已创建 Release（id=$RELEASE_ID）"
 else
-  echo "✗ 查询 Gitee Release 失败（HTTP $STATUS）：" >&2
-  cat "$TMP_JSON" >&2
-  exit 1
+  echo "  复用已有 Release（id=$RELEASE_ID）"
 fi
 
 HAS_ASSET="$(python3 - "$TMP_JSON" "$ASSET_NAME" <<'PY'
@@ -67,7 +88,7 @@ except Exception:
     print("0")
     raise SystemExit(0)
 
-assets = data.get("assets") or []
+assets = (data.get("assets") or []) if isinstance(data, dict) else []
 print("1" if any(a.get("name") == name for a in assets) else "0")
 PY
 )"
