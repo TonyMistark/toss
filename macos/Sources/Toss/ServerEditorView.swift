@@ -26,32 +26,36 @@ struct ServerEditorView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text(isEditing ? t("Edit Server") : t("Add Server"))
-                .font(.title2)
-                .bold()
+                .font(.title2.weight(.semibold))
 
             Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 10) {
                 GridRow {
                     Text(t("Name"))
+                        .foregroundStyle(.secondary)
                         .frame(width: 72, alignment: .trailing)
                     TextField(t("e.g. prod, nas"), text: $name)
                 }
                 GridRow {
                     Text(t("Host"))
+                        .foregroundStyle(.secondary)
                         .frame(width: 72, alignment: .trailing)
                     TextField(t("IP address or hostname"), text: $host)
                 }
                 GridRow {
                     Text(t("User"))
+                        .foregroundStyle(.secondary)
                         .frame(width: 72, alignment: .trailing)
                     TextField(t("Leave empty to use the SSH default user"), text: $user)
                 }
                 GridRow {
                     Text(t("Port"))
+                        .foregroundStyle(.secondary)
                         .frame(width: 72, alignment: .trailing)
                     TextField("22", text: $port)
                 }
                 GridRow {
                     Text(t("Transfer folder"))
+                        .foregroundStyle(.secondary)
                         .frame(width: 72, alignment: .trailing)
                     TextField(
                         t("Leave empty to inherit the global folder: {}", state.config.globalTargetDir),
@@ -73,7 +77,7 @@ struct ServerEditorView: View {
 
             Spacer()
 
-            HStack {
+            HStack(spacing: 12) {
                 if isEditing {
                     Button(t("Delete Server"), role: .destructive) {
                         confirmDelete = true
@@ -83,10 +87,12 @@ struct ServerEditorView: View {
                 Button(t("Cancel")) {
                     dismiss()
                 }
+                .keyboardShortcut(.cancelAction)
                 Button(t("Save")) {
                     save()
                 }
                 .keyboardShortcut(.defaultAction)
+                .buttonStyle(.borderedProminent)
             }
         }
         .padding(20)

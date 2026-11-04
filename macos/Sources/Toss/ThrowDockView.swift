@@ -4,6 +4,12 @@ import UniformTypeIdentifiers
 enum Brand {
     /// 投递口命中时的品牌绿。
     static let green = Color(red: 0.09, green: 0.62, blue: 0.40)
+
+    /// 统一的卡片圆角。
+    static let radius: CGFloat = 12
+
+    /// 分隔线与描边的「发丝」色。
+    static let hairline = Color.primary.opacity(0.08)
 }
 
 /// 其余服务器 + 本机：一排大号堆叠投递口。
@@ -21,14 +27,14 @@ struct ThrowDockView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(t("Drop into another server or this Mac"))
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 16)
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+                .padding(.horizontal, 20)
                 .padding(.top, 10)
 
             GeometryReader { geometry in
                 ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 16) {
+                    HStack(spacing: 12) {
                         ForEach(targets) { target in
                             ThrowTargetCard(
                                 state: state,
@@ -37,21 +43,21 @@ struct ThrowDockView: View {
                             )
                         }
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 10)
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 8)
                 }
             }
         }
-        .frame(height: 186)
-        .background(Color(nsColor: .windowBackgroundColor))
+        .frame(height: 176)
+        .background(.regularMaterial)
     }
 
     private func cardWidth(available: CGFloat) -> CGFloat {
         let count = CGFloat(max(targets.count, 1))
-        let spacing: CGFloat = 16
-        let padding: CGFloat = 32
+        let spacing: CGFloat = 12
+        let padding: CGFloat = 40
         let proposed = (available - padding - spacing * (count - 1)) / count
-        return max(150, min(210, proposed))
+        return max(146, min(204, proposed))
     }
 }
 
@@ -64,8 +70,8 @@ private struct ThrowTargetCard: View {
 
     var body: some View {
         ZStack(alignment: .top) {
-            backingCard(scale: 0.92, offset: -18, opacity: 0.45)
-            backingCard(scale: 0.96, offset: -9, opacity: 0.72)
+            backingCard(scale: 0.93, offset: -16, opacity: 0.35)
+            backingCard(scale: 0.965, offset: -8, opacity: 0.60)
             frontCard
         }
         .padding(.top, 22)
@@ -76,68 +82,67 @@ private struct ThrowTargetCard: View {
         .onDrop(of: [UTType.json], isTargeted: $isTargeted) { providers in
             handleDrop(providers)
         }
-        .animation(.spring(response: 0.24, dampingFraction: 0.78), value: isTargeted)
+        .animation(.spring(response: 0.26, dampingFraction: 0.82), value: isTargeted)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(t("Throw to {}", target.displayName))
     }
 
     private var frontCard: some View {
-        VStack(spacing: 6) {
-            Image(systemName: target.isLocal ? "laptopcomputer" : "server.rack")
-                .font(.system(size: 22, weight: .medium))
-                .foregroundStyle(isTargeted ? Brand.green : Color.secondary)
+        VStack(spacing: 7) {
+            ZStack {
+                Circle()
+                    .fill(isTargeted ? Brand.green.opacity(0.14) : Color.primary.opacity(0.05))
+                    .frame(width: 34, height: 34)
+                Image(systemName: target.isLocal ? "laptopcomputer" : "server.rack")
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundStyle(isTargeted ? Brand.green : Color.secondary)
+            }
 
             Text(target.displayName)
-                .font(.headline)
+                .font(.subheadline.weight(.semibold))
                 .lineLimit(1)
 
             Text(target.addressLine)
-                .font(.caption)
+                .font(.caption2)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
                 .truncationMode(.middle)
 
             Text(t("Drop here"))
                 .font(.caption2)
-                .foregroundStyle(isTargeted ? Brand.green : Color.secondary.opacity(0.8))
+                .foregroundStyle(isTargeted ? Brand.green : Color(nsColor: .tertiaryLabelColor))
         }
-        .padding(.horizontal, 12)
-        .frame(width: width, height: 108)
+        .padding(.horizontal, 10)
+        .frame(width: width, height: 104)
         .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(isTargeted ? Brand.green.opacity(0.10) : Color(nsColor: .controlBackgroundColor))
+            RoundedRectangle(cornerRadius: Brand.radius, style: .continuous)
+                .fill(isTargeted
+                      ? Brand.green.opacity(0.08)
+                      : Color(nsColor: .controlBackgroundColor).opacity(0.62))
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
+            RoundedRectangle(cornerRadius: Brand.radius, style: .continuous)
                 .strokeBorder(
-                    isTargeted ? Brand.green : Color.secondary.opacity(0.28),
-                    lineWidth: isTargeted ? 2 : 1
+                    isTargeted ? Brand.green : Brand.hairline,
+                    lineWidth: isTargeted ? 1.5 : 0.5
                 )
         )
         .shadow(
-            color: .black.opacity(isTargeted ? 0.16 : 0.06),
-            radius: isTargeted ? 10 : 4,
-            y: isTargeted ? 6 : 2
+            color: .black.opacity(isTargeted ? 0.10 : 0.02),
+            radius: isTargeted ? 8 : 2,
+            y: isTargeted ? 4 : 1
         )
-        .offset(y: isTargeted ? -4 : 0)
+        .scaleEffect(isTargeted ? 1.02 : 1)
+        .offset(y: isTargeted ? -3 : 0)
     }
 
     private func backingCard(scale: CGFloat, offset: CGFloat, opacity: Double) -> some View {
-        RoundedRectangle(cornerRadius: 14, style: .continuous)
-            .fill(Color(nsColor: .controlBackgroundColor))
-            .frame(width: width, height: 108)
+        RoundedRectangle(cornerRadius: Brand.radius, style: .continuous)
+            .fill(Color(nsColor: .controlBackgroundColor).opacity(0.42))
+            .frame(width: width, height: 104)
             .scaleEffect(x: scale, y: scale)
             .offset(y: offset)
             .opacity(opacity)
-            .overlay(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .strokeBorder(
-                        isTargeted ? Brand.green.opacity(0.5) : Color.secondary.opacity(0.16),
-                        lineWidth: 1
-                    )
-                    .scaleEffect(x: scale, y: scale)
-                    .offset(y: offset)
-            )
     }
 
     private func handleDrop(_ providers: [NSItemProvider]) -> Bool {

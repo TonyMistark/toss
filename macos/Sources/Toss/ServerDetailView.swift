@@ -29,8 +29,8 @@ struct ServerDetailView: View {
             }
             .pickerStyle(.segmented)
             .labelsHidden()
-            .padding(.horizontal, 16)
-            .padding(.vertical, 10)
+            .padding(.horizontal, 20)
+            .padding(.vertical, 8)
 
             Group {
                 switch tab {
@@ -46,7 +46,7 @@ struct ServerDetailView: View {
                     ListPanel(state: state, server: server)
                 }
             }
-            .padding(.horizontal, 16)
+            .padding(.horizontal, 20)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
 
             if tab != .throwFlow {
@@ -63,15 +63,13 @@ struct ServerDetailView: View {
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 8) {
                     Text(server.name)
-                        .font(.title2)
-                        .bold()
+                        .font(.title2.weight(.semibold))
                     if server.hasCustomTargetDir {
                         Text(t("Custom folder"))
                             .font(.caption)
                             .padding(.horizontal, 7)
                             .padding(.vertical, 2)
-                            .background(Color.secondary.opacity(0.15))
-                            .clipShape(Capsule())
+                            .background(Color.primary.opacity(0.06), in: Capsule())
                     }
                 }
 
@@ -93,7 +91,7 @@ struct ServerDetailView: View {
 
             Button(t("Edit"), action: onEdit)
         }
-        .padding(16)
+        .padding(20)
     }
 }
 

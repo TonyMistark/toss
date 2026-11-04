@@ -58,8 +58,9 @@ struct ContentView: View {
             if state.servers.isEmpty {
                 VStack(spacing: 10) {
                     Image(systemName: "server.rack")
-                        .font(.system(size: 34))
-                        .foregroundStyle(.secondary)
+                        .font(.system(size: 32))
+                        .symbolRenderingMode(.hierarchical)
+                        .foregroundStyle(.tertiary)
                     Text(t("No servers yet"))
                         .font(.headline)
                     Text(t("Use the Add button below or + in the toolbar"))
@@ -132,8 +133,9 @@ struct ContentView: View {
             } else {
                 VStack(spacing: 12) {
                     Image(systemName: "shippingbox")
-                        .font(.system(size: 42))
-                        .foregroundStyle(.secondary)
+                        .font(.system(size: 40))
+                        .symbolRenderingMode(.hierarchical)
+                        .foregroundStyle(.tertiary)
                     Text(t("Choose or add a server"))
                         .font(.title3)
                     Text(t("Pick a server on the left to send, pull, and browse files."))
@@ -155,19 +157,30 @@ struct ServerRow: View {
     let targetDir: String
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text(server.name)
-                .font(.headline)
-            Text(server.address)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            Text(targetDir)
-                .font(.caption2)
-                .foregroundStyle(.tertiary)
-                .lineLimit(1)
-                .truncationMode(.middle)
+        HStack(spacing: 10) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .fill(Color.primary.opacity(0.05))
+                    .frame(width: 26, height: 26)
+                Image(systemName: "server.rack")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(.secondary)
+            }
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(server.name)
+                    .font(.callout.weight(.semibold))
+                Text(server.address)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                Text(targetDir)
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
         }
-        .padding(.vertical, 2)
+        .padding(.vertical, 3)
     }
 }
 

@@ -18,7 +18,10 @@ struct ThrowSourcePanel: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
-                Label(directory, systemImage: "folder")
+                Image(systemName: "folder")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+                Text(directory)
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
@@ -26,6 +29,12 @@ struct ThrowSourcePanel: View {
                     .textSelection(.enabled)
 
                 Spacer()
+
+                if !selection.isEmpty {
+                    Text(t("{} selected", selection.count))
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
 
                 if isLoading {
                     ProgressView()
@@ -35,13 +44,17 @@ struct ThrowSourcePanel: View {
                 Button {
                     Task { await load() }
                 } label: {
-                    Label(t("Refresh"), systemImage: "arrow.clockwise")
+                    Image(systemName: "arrow.clockwise")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
+                .buttonStyle(.plain)
                 .disabled(isLoading)
+                .help(t("Refresh"))
             }
 
             if let error {
-                Text(error)
+                Label(error, systemImage: "exclamationmark.circle.fill")
                     .font(.caption)
                     .foregroundStyle(.red)
                     .textSelection(.enabled)
@@ -50,8 +63,9 @@ struct ThrowSourcePanel: View {
             if entries.isEmpty && !isLoading && error == nil {
                 VStack(spacing: 8) {
                     Image(systemName: "tray")
-                        .font(.system(size: 30))
-                        .foregroundStyle(.secondary)
+                        .font(.system(size: 28))
+                        .symbolRenderingMode(.hierarchical)
+                        .foregroundStyle(.tertiary)
                     Text(t("The folder is empty"))
                         .font(.callout)
                         .foregroundStyle(.secondary)
@@ -73,6 +87,7 @@ struct ThrowSourcePanel: View {
             Text(t("Drag an item onto a target below"))
                 .font(.caption2)
                 .foregroundStyle(.tertiary)
+                .padding(.leading, 2)
         }
         .task { await load() }
     }
@@ -115,9 +130,11 @@ private struct ThrowEntryRow: View {
     let entry: ThrowEntry
 
     var body: some View {
-        HStack(spacing: 8) {
-            Image(systemName: entry.isDirectory ? "folder.fill" : "doc.fill")
-                .foregroundStyle(entry.isDirectory ? Color.secondary : Color.secondary.opacity(0.8))
+        HStack(spacing: 9) {
+            Image(systemName: entry.isDirectory ? "folder" : "doc")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .frame(width: 18, alignment: .leading)
             VStack(alignment: .leading, spacing: 2) {
                 Text(entry.name)
                     .font(.callout)
@@ -125,11 +142,11 @@ private struct ThrowEntryRow: View {
                     .truncationMode(.middle)
                 Text(entry.sizeText)
                     .font(.caption2)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(.tertiary)
             }
             Spacer(minLength: 0)
         }
-        .padding(.vertical, 2)
+        .padding(.vertical, 3)
         .contentShape(Rectangle())
         .help(entry.name)
     }
