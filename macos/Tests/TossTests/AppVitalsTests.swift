@@ -93,7 +93,8 @@ struct UpdateInstallerFlowTests {
 
 // MARK: - 崩溃报告
 
-/// 收现场的那一段：只有头没有帧 = 强退（`terminated`），有帧才是崩溃。
+/// 收现场的那一段：只有头 = 强退（`terminated`）；处理器写了 kind 就算崩溃，
+/// 哪怕抓栈失败、帧为空。
 @Suite("崩溃报告入账", .serialized)
 @MainActor
 struct CrashStoreHarvestTests {
@@ -148,6 +149,32 @@ struct CrashStoreHarvestTests {
         store.harvest(isLiveOwner: { _ in false })
 
         #expect(store.reports.first?.kind == .terminated)
+    }
+
+    @Test("写了信号但抓栈失败：仍算崩溃，不冒充「没有正常退出」")
+    func signalWithoutFramesIsStillACrash() throws {
+        let directory = try tempDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        // 处理器跑到了，只是 `backtrace` 没抓到帧——这依然是真崩溃（#1）。
+        let crashTime = Int(Date().addingTimeInterval(-3600).timeIntervalSince1970)
+        let raw = """
+        WTMDCRASH 1
+        kind signal
+        signal SIGSEGV
+        t \(crashTime)
+        frames
+        end
+
+        """
+        let inflight = directory.appendingPathComponent(".inflight-999997-\(crashTime).raw")
+        try raw.write(to: inflight, atomically: true, encoding: .utf8)
+
+        let store = CrashStore(directory: directory, hidesDevelopmentReports: false)
+        store.harvest(isLiveOwner: { _ in false })
+
+        #expect(store.reports.first?.kind == .signal)
+        #expect(store.reports.first?.signal == "SIGSEGV")
     }
 
     @Test("另一个实例正在写的现场不算遗物——不能报成崩溃")
