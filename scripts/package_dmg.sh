@@ -16,6 +16,8 @@ fi
 
 DMG="$ROOT/dist/toss-$VERSION.dmg"
 mkdir -p "$ROOT/dist"
+# dist 只留当前版本，避免旧安装包混进发布目录。
+find "$ROOT/dist" -maxdepth 1 -type f -name 'toss-*.dmg' ! -name "toss-$VERSION.dmg" -delete
 rm -f "$DMG"
 
 hdiutil create \

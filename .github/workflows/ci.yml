@@ -1,16 +1,57 @@
+# CI — 来自 macapp-vitals（wtmd 实战版）
+# 要点：
+#   * fail-fast: false —— 一个平台挂了另一个照跑完，失败明细一次拿全，省一轮 rerun
+#   * Release build 兜底 —— 测试过但 release 编不过的代码不许进 main
+#   * concurrency 取消同分支旧跑 —— 省额度，也避免旧结论盖新结论
 name: CI
 
 on:
   push:
     branches: [main]
+    tags: ['v*']
   pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   test:
-    runs-on: macos-15
-    steps:
-      - uses: actions/checkout@v4
+    name: Build & Test (macOS ${{ matrix.pretty }})
+    runs-on: ${{ matrix.macOS }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - macOS: macos-15
+            pretty: "15"
+          - macOS: macos-26
+            pretty: "26"
 
-      - name: Run tests
+    defaults:
+      run:
         working-directory: macos
-        run: swift test
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Show environment
+        run: |
+          swift --version
+          xcodebuild -version
+
+      - name: Build
+        run: swift build --disable-sandbox
+
+      - name: Test
+        run: swift test --disable-sandbox
+
+      - name: Release build (sanity check)
+        run: swift build -c release --disable-sandbox

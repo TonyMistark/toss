@@ -1,5 +1,8 @@
 # toss
 
+[![CI](https://github.com/TonyMistark/toss/actions/workflows/ci.yml/badge.svg)](https://github.com/TonyMistark/toss/actions/workflows/ci.yml)
+[![Tests](https://img.shields.io/badge/tests-14%20passed-brightgreen)](#)
+
 个人工具集 MCP 服务。把常用运维操作封装成 MCP 工具，既可以在终端里敲命令用，也可以注册到 Claude Code 让 AI 帮你执行。
 
 ## 安装
@@ -84,6 +87,9 @@ App 直接调用系统 `scp` / `ssh`，前置条件与 CLI 相同（SSH 密钥�
 # 本地打包
 TOSS_VERSION=0.1.0 ./scripts/build_app.sh
 VERSION=0.1.0 ./scripts/package_dmg.sh
+
+# 发布前必须隔离冒烟：挂载 dmg，用独立 HOME 启动，校验轨迹与崩溃目录
+VERSION=0.1.0 ./scripts/smoke_test.sh
 
 # 发布：推 tag 后 GitHub Actions 自动测试、构建、创建 GitHub Release
 git tag v0.1.0

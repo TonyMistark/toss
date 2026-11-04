@@ -34,10 +34,12 @@ jobs:
           test -f "$DMG"
           if gh release view "v$VERSION" >/dev/null 2>&1; then
             gh release upload "v$VERSION" "$DMG" --clobber
+            gh release edit "v$VERSION" --latest
           else
             gh release create "v$VERSION" "$DMG" \
               --title "Toss $VERSION" \
-              --notes "Toss $VERSION"
+              --notes "Toss $VERSION" \
+              --latest
           fi
 
       - name: Sync release to Gitee

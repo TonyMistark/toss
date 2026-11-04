@@ -18,8 +18,6 @@ enum ServerEditorTarget: Identifiable {
 struct ContentView: View {
     @ObservedObject var state: AppState
 
-    @EnvironmentObject private var profile: ProfileStore
-
     @State private var editorTarget: ServerEditorTarget?
 
     var body: some View {
@@ -45,18 +43,9 @@ struct ContentView: View {
             }
 
             ToolbarItem(placement: .primaryAction) {
-                Button {
+                SettingsEntryButton {
                     SettingsWindow.open()
-                } label: {
-                    ProfileAvatar(
-                        image: profile.avatar,
-                        initial: profile.initial,
-                        size: 24
-                    )
                 }
-                .buttonStyle(.plain)
-                .help(profile.hasNickname ? profile.nickname : t("Settings"))
-                .accessibilityLabel(t("Settings"))
             }
         }
         .sheet(item: $editorTarget) { target in
