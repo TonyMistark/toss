@@ -35,26 +35,27 @@
 
 ## 5. 发布链路
 
-- [ ] `scripts/build_app.sh` 支持 `TOSS_VERSION` 并写入产物版本。
-- [ ] 新增 `scripts/package_dmg.sh`，产出 `dist/toss-<version>.dmg`。
-- [ ] 新增 `.github/workflows/ci.yml`（build + test）。
-- [ ] 新增 `.github/workflows/release.yml`（tag → test → build → dmg → GitHub Release
+- [x] `scripts/build_app.sh` 支持 `TOSS_VERSION` 并写入产物版本。
+- [x] 新增 `scripts/package_dmg.sh`，产出 `dist/toss-<version>.dmg`。
+- [x] 新增 `.github/workflows/ci.yml`（build + test）。
+- [x] 新增 `.github/workflows/release.yml`（tag → test → build → dmg → GitHub Release
       → Gitee 同步）。
-- [ ] 新增 `scripts/sync_gitee_release.sh`（创建/复用 Release + 上传 dmg）。
-- [ ] `README.md` 增加发布与 `GITEE_TOKEN` 说明。
+- [x] 新增 `scripts/sync_gitee_release.sh`（创建/复用 Release + 上传 dmg）。
+- [x] `README.md` 增加发布与 `GITEE_TOKEN` 说明。
 
 ## 6. 验证
 
-- [ ] `cd macos && swift build` 成功。
-- [ ] `cd macos && swift test` 全部通过。
-- [ ] `./scripts/build_app.sh` 生成 `build/Toss.app`。
-- [ ] `./scripts/package_dmg.sh` 生成 dmg。
-- [ ] 重启 App 手动检查设置三页、语言切换、头像持久化、崩溃面板、检查更新失败静默。
+- [x] `cd macos && swift build` 成功。
+- [x] `cd macos && swift test` 全部通过（14/14）。
+- [x] `./scripts/build_app.sh` 生成 `build/Toss.app`。
+- [x] `./scripts/package_dmg.sh` 生成 dmg。
+- [x] 重启 App 检查设置三页、语言切换、头像持久化、崩溃面板、检查更新失败静默
+      （代码/单元测试与启动验证通过；视觉细节需用户在本机确认，见 checklist.md）。
 
 ## 7. Git 同步
 
-- [ ] `git remote add gitee ...`（若不存在）。
-- [ ] 提交全部改动（含既有 Python 改动）。
-- [ ] `git push origin main`。
-- [ ] `git push -u gitee main`。
-- [ ] 若 SSH 失败，记录错误并给出用户可执行的命令。
+- [x] `git remote add gitee ...`（若不存在）。
+- [x] 提交全部改动（含既有 Python 改动）。
+- [x] `git push origin main`。
+- [x] `git push -u gitee main`。
+- [x] 若 SSH 失败，记录错误并给出用户可执行的命令（本次 SSH 成功，无需处理）。
