@@ -35,6 +35,9 @@
 - [x] Release 创建时标记 `--latest`。
 - [x] 发布前隔离冒烟：DMG 可启动、轨迹首行正常、无崩溃报告。
 - [x] Gitee 双源附件（`toss-0.1.0.dmg` 已上传）。
+- [x] 根目录 `sync-gitee-release.sh` / `sync-gitee-all.sh` 与独立 `gitee-sync.yml` 已就绪。
+- [x] Release workflow 只发布 GitHub，Gitee 同步失败不挡发布。
+- [ ] 本机兜底令牌 `~/.config/toss/gitee-token`（chmod 600，按需配置）。
 
 ## 需用户本机确认的视觉项
 

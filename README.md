@@ -96,7 +96,21 @@ git tag v0.1.0
 git push origin v0.1.0
 
 # 同一份 dmg 也会上传到 Gitee，供 GitHub 下载失败时回退
-# 需要在仓库 Settings → Secrets 中配置 GITEE_TOKEN
+# 一次性配置：gh secret set GITEE_TOKEN -R TonyMistark/toss
+```
+
+Gitee 镜像由 `.github/workflows/gitee-sync.yml` 自动同步，Release 失败不会反过来挡住 GitHub 发布。
+幂等补跑：
+
+```bash
+# 本机兜底令牌（一次性）
+mkdir -p ~/.config/toss
+echo '<Gitee token>' > ~/.config/toss/gitee-token
+chmod 600 ~/.config/toss/gitee-token
+
+# 补单个版本 / 全量补齐历史版本
+./sync-gitee-release.sh v0.1.0
+./sync-gitee-all.sh
 ```
 
 App 内置更新器会同时查 GitHub 与 Gitee（`TonyMistark/toss` / `Micestark/toss`），
