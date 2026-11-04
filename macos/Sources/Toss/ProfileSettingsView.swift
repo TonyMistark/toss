@@ -15,6 +15,8 @@ struct ProfileSettingsView: View {
     @EnvironmentObject var profile: ProfileStore
     /// 选中的文件读不出来时给一句人话，而不是静悄悄什么都不发生。
     @State private var failure: String?
+    /// 选好但还没裁剪的图片。
+    @State private var cropping: CroppingImage?
 
     var body: some View {
         Form {
@@ -56,6 +58,18 @@ struct ProfileSettingsView: View {
         }
         .formStyle(.grouped)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .sheet(item: $cropping) { item in
+            AvatarCropView(image: item.image) {
+                cropping = nil
+            } onApply: { image in
+                if profile.setAvatar(image) {
+                    failure = nil
+                } else {
+                    failure = t("That file could not be read as a picture.")
+                }
+                cropping = nil
+            }
+        }
     }
 
     private func choosePicture() {
@@ -65,10 +79,11 @@ struct ProfileSettingsView: View {
         panel.canChooseDirectories = false
         panel.prompt = t("Choose")
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        if profile.setAvatar(from: url) {
-            failure = nil
-        } else {
+        guard let image = NSImage(contentsOf: url) else {
             failure = t("That file could not be read as a picture.")
+            return
         }
+        failure = nil
+        cropping = CroppingImage(image: image)
     }
 }
