@@ -8,6 +8,8 @@
     <string>Toss</string>
     <key>CFBundleExecutable</key>
     <string>Toss</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
     <key>CFBundleIdentifier</key>
     <string>com.toss.macapp</string>
     <key>CFBundleInfoDictionaryVersion</key>

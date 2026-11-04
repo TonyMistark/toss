@@ -10,6 +10,7 @@ build/
 
 # Swift
 macos/.build/
+macos/Resources/AppIcon.iconset/
 
 # Release artifacts
 dist/
