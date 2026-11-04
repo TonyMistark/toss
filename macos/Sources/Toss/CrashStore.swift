@@ -268,8 +268,9 @@ final class CrashStore: ObservableObject {
         breadcrumbs: [String],
         capturedAt: Date
     ) -> CrashReport {
-        // 有帧才算「抓到了现场」；只有头的是强退/断电。
-        let kind: CrashReport.Kind = raw.frames.isEmpty ? .terminated : raw.kind
+        // 处理器写了 kind 就算崩溃——帧可能因为抓栈失败而空着，那也是真崩溃。
+        // 只有头部的才是强退/断电：进程连一行现场都没写下。
+        let kind: CrashReport.Kind = raw.kind ?? .terminated
         // 版本取死去那一位自报的（轨迹 launch 行）。收报告的进程可能已经
         // 升过级——报成自己的版本会让人排查一个不存在的版本（#252）。
         let version = CrashReport.launchedVersion(in: breadcrumbs) ?? CrashEnvironment.appVersion

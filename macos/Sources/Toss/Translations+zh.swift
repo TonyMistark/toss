@@ -62,6 +62,7 @@ enum TranslationsZh {
         "Takes effect the next time Toss opens — menus and windows are built at launch.": "下次启动 toss 时完整生效——菜单和窗口都在启动时构建。",
         "That file could not be read as a picture.": "这个文件读不成图片。",
         "The downloaded app is not the promised version.": "下载的 app 版本不对",
+        "The failure was recorded, but no call stack was captured.": "记下了故障类型，但没抓到调用栈。",
         "The report stays on this Mac. The button opens a new GitHub issue with the details filled in — nothing is posted until you press Submit. It never contains text from your documents.": "报告只留在这台 Mac 上。那个按钮会打开一个已经填好的新 issue 页面，{}你按下提交才算发出去。报告里没有任何正文。",
         "Time": "时间",
         "Update…": "现在更新…",

@@ -49,7 +49,10 @@ enum CrashEnvironment {
 /// 信号处理器当场写下的那几个字段。它是**原始材料**：进程死之前能写的只有这些
 /// （不能分配内存、不能格式化字符串），版本、系统、轨迹都在下次启动时才补上。
 struct CrashRaw: Equatable {
-    var kind: CrashReport.Kind = .signal
+    /// 处理器写下的种类；`nil` 表示只有头部——进程没来得及写任何现场
+    /// （强制退出、`kill -9`、断电）。这个区别不能省：抓栈失败时帧同样为空，
+    /// 但那种情况是**真崩溃**，不能报成「被外部结束」。
+    var kind: CrashReport.Kind?
     var signal: String?
     var exceptionName: String?
     var exceptionReason: String?
@@ -317,7 +320,11 @@ struct CrashReport: Identifiable, Equatable {
 
         body += "\n## \(t("What happened"))\n\n"
         if raw.frames.isEmpty {
-            body += t("Nothing was captured: the process went away without a chance to write — force quit, `kill -9`, a power loss or a panic.")
+            if kind == .terminated {
+                body += t("Nothing was captured: the process went away without a chance to write — force quit, `kill -9`, a power loss or a panic.")
+            } else {
+                body += t("The failure was recorded, but no call stack was captured.")
+            }
             body += "\n"
         } else {
             let name = raw.signal ?? t("an unknown signal")
