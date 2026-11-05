@@ -57,6 +57,8 @@ enum TranslationsZh {
         "Reveal Download": "在访达中显示",
         "Reveal in Finder": "在访达中显示",
         "Show Crash Reports": "打开崩溃报告文件夹",
+        "Show more": "下一屏",
+        "Show previous": "上一屏",
         "Signal": "信号",
         "System": "系统",
         "Takes effect the next time Toss opens — menus and windows are built at launch.": "下次启动 toss 时完整生效——菜单和窗口都在启动时构建。",

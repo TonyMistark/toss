@@ -66,6 +66,18 @@ enum ThrowTargets {
     }
 }
 
+/// 投递口横向翻页：一次最多移动一屏可见的数量，不会跳过没露过面的机器。
+enum DockPaging {
+    static func step(index: Int, visible: Int, total: Int, forward: Bool) -> Int {
+        let visible = max(1, visible)
+        let maxIndex = max(0, total - visible)
+        let current = min(max(0, index), maxIndex)
+        return forward
+            ? min(current + visible, maxIndex)
+            : max(current - visible, 0)
+    }
+}
+
 // MARK: - 源条目
 
 /// 源服务器收发目录里的一个条目。名称在同一个目录里唯一，直接当 id。

@@ -132,6 +132,34 @@ struct ThrowDestinationsTests {
     }
 }
 
+// MARK: - 投递口翻页
+
+@Suite("投递口翻页")
+struct DockPagingTests {
+    @Test("每屏 3 张、共 13 张时向右不跨越未显示的机器")
+    func forwardStopsAtLastPage() {
+        #expect(DockPaging.step(index: 0, visible: 3, total: 13, forward: true) == 3)
+        #expect(DockPaging.step(index: 3, visible: 3, total: 13, forward: true) == 6)
+        #expect(DockPaging.step(index: 9, visible: 3, total: 13, forward: true) == 10)
+        #expect(DockPaging.step(index: 10, visible: 3, total: 13, forward: true) == 10)
+    }
+
+    @Test("向左同样只退一屏，到头停在 0")
+    func backwardStopsAtStart() {
+        #expect(DockPaging.step(index: 10, visible: 3, total: 13, forward: false) == 7)
+        #expect(DockPaging.step(index: 4, visible: 3, total: 13, forward: false) == 1)
+        #expect(DockPaging.step(index: 1, visible: 3, total: 13, forward: false) == 0)
+        #expect(DockPaging.step(index: 0, visible: 3, total: 13, forward: false) == 0)
+    }
+
+    @Test("全部能放下时不动；越界索引会被夹回范围")
+    func clampsToRange() {
+        #expect(DockPaging.step(index: 0, visible: 5, total: 3, forward: true) == 0)
+        #expect(DockPaging.step(index: 99, visible: 3, total: 13, forward: true) == 10)
+        #expect(DockPaging.step(index: 99, visible: 3, total: 13, forward: false) == 7)
+    }
+}
+
 // MARK: - 本机目录浏览
 
 @Suite("本机目录浏览")
