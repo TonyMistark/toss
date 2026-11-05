@@ -35,7 +35,7 @@ struct ServerDetailView: View {
             Group {
                 switch tab {
                 case .throwFlow:
-                    ThrowSourcePanel(state: state, server: server)
+                    ThrowSourcePanel(state: state, source: .server(server))
                 case .send:
                     ScrollView {
                         SendPanel(state: state, server: server)

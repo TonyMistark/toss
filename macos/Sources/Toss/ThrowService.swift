@@ -4,11 +4,21 @@ import Foundation
 /// 所有远端命令都从 `ThrowCommand` 生成，避免手拼引号。
 struct ThrowService {
     private static let sshPath = "/usr/bin/ssh"
+    private static let shPath = "/bin/sh"
     private static let tarPath = "/usr/bin/tar"
 
     typealias Report = (TransferStage, Double?, Int64?) -> Void
 
     // MARK: - 浏览
+
+    func browse(source: ThrowTarget, directory: String) async throws -> [ThrowEntry] {
+        switch source {
+        case .server(let server):
+            return try await browse(server: server, directory: directory)
+        case .local:
+            return try browseLocal(directory: directory)
+        }
+    }
 
     func browse(server: ServerConfig, directory: String) async throws -> [ThrowEntry] {
         let dir = directory.trimmed
@@ -28,16 +38,66 @@ struct ThrowService {
         return ThrowListing.parse(result.stdout)
     }
 
+    /// 本机目录直接用 FileManager 列，不用起子进程。
+    func browseLocal(directory: String) throws -> [ThrowEntry] {
+        let dir = directory.trimmed
+        guard !dir.isEmpty else {
+            throw TossError(t("Transfer folder cannot be empty"))
+        }
+
+        let url = URL(fileURLWithPath: (dir as NSString).expandingTildeInPath)
+        do {
+            try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+            let names = try FileManager.default.contentsOfDirectory(atPath: url.path)
+            var entries: [ThrowEntry] = []
+            for name in names {
+                let item = url.appendingPathComponent(name)
+                var isDirectory: ObjCBool = false
+                guard FileManager.default.fileExists(atPath: item.path, isDirectory: &isDirectory)
+                else { continue }
+
+                let bytes: Int64
+                if isDirectory.boolValue {
+                    bytes = exactLocalBytes(item)
+                } else {
+                    bytes = Int64(
+                        (try? item.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+                    )
+                }
+                entries.append(ThrowEntry(
+                    name: name,
+                    isDirectory: isDirectory.boolValue,
+                    byteSize: bytes
+                ))
+            }
+            return entries.sorted {
+                $0.name.localizedStandardCompare($1.name) == .orderedAscending
+            }
+        } catch {
+            throw TossError(t("Could not list the folder: {}", error.localizedDescription))
+        }
+    }
+
     // MARK: - 执行
 
     func run(_ job: TransferJob, cancellation: ThrowCancellation, report: @escaping Report) async throws {
         if cancellation.isCancelled { throw ThrowCancelled() }
 
-        switch job.target {
-        case .local:
+        switch (job.source, job.target) {
+        case (.server, .local):
             try await deliverToLocal(job, cancellation: cancellation, report: report)
-        case .server(let destination):
-            try await relay(job, destination: destination, cancellation: cancellation, report: report)
+        case (.server(let source), .server(let destination)):
+            try await relay(
+                job,
+                source: source,
+                destination: destination,
+                cancellation: cancellation,
+                report: report
+            )
+        case (.local, .server(let destination)):
+            try await upload(job, destination: destination, cancellation: cancellation, report: report)
+        case (.local, .local):
+            throw TossError(t("This Mac cannot throw to itself"))
         }
     }
 
@@ -45,6 +105,7 @@ struct ThrowService {
 
     private func relay(
         _ job: TransferJob,
+        source: ServerConfig,
         destination: ServerConfig,
         cancellation: ThrowCancellation,
         report: @escaping Report
@@ -84,7 +145,7 @@ struct ThrowService {
             )
 
             let streamed = try await stream(
-                source: job.source,
+                source: .remote(source),
                 sourceCommand: sourceCommand,
                 destination: destination,
                 destinationCommand: destinationCommand,
@@ -104,7 +165,7 @@ struct ThrowService {
             report(.verifying, nil, nil)
 
             let sourceBytes = try await exactBytes(
-                job.source,
+                source,
                 paths: job.entries.map { ThrowCommand.join(job.sourceDir, $0.name) }
             )
             let destinationBytes = try await exactBytes(destination, paths: [tempDir])
@@ -152,6 +213,10 @@ struct ThrowService {
         let tempRoot = try makeTempDirectory(prefix: "toss-incoming-")
         defer { try? FileManager.default.removeItem(at: tempRoot) }
 
+        guard case .server(let source) = job.source else {
+            throw TossError(t("This Mac cannot throw to itself"))
+        }
+
         report(.transferring, nil, 0)
 
         let sourceCommand = ThrowCommand.source(
@@ -165,7 +230,7 @@ struct ThrowService {
             let name = job.entries[0].name
             payloadURL = tempRoot.appendingPathComponent(name)
             let streamed = try await stream(
-                source: job.source,
+                source: .remote(source),
                 sourceCommand: sourceCommand,
                 destination: nil,
                 destinationCommand: "",
@@ -180,7 +245,7 @@ struct ThrowService {
         } else {
             let archive = tempRoot.appendingPathComponent("payload.tar.gz")
             let streamed = try await stream(
-                source: job.source,
+                source: .remote(source),
                 sourceCommand: sourceCommand,
                 destination: nil,
                 destinationCommand: "",
@@ -208,7 +273,7 @@ struct ThrowService {
         report(.verifying, nil, nil)
 
         let sourceBytes = try await exactBytes(
-            job.source,
+            source,
             paths: job.entries.map { ThrowCommand.join(job.sourceDir, $0.name) }
         )
         let localBytes = exactLocalBytes(payloadURL)
@@ -228,7 +293,105 @@ struct ThrowService {
         report(.finished, 1, sourceBytes)
     }
 
+    // MARK: - 本机 → 服务器：本机打包，管道送进 SSH
+
+    private func upload(
+        _ job: TransferJob,
+        destination: ServerConfig,
+        cancellation: ThrowCancellation,
+        report: @escaping Report
+    ) async throws {
+        let targetDir = job.targetDir.trimmed
+        guard !targetDir.isEmpty else {
+            throw TossError(t("Transfer folder cannot be empty"))
+        }
+        guard !job.entries.isEmpty else {
+            throw TossError(t("No files selected to send"))
+        }
+
+        let tempDir = ThrowCommand.join(targetDir, ".toss-incoming-\(UUID().uuidString)")
+
+        let prepare = try await runSSH(
+            destination,
+            "mkdir -p \(ThrowCommand.remoteQuote(targetDir)) \(ThrowCommand.remoteQuote(tempDir))"
+        )
+        try requireSuccess(
+            prepare,
+            cancellation: cancellation,
+            message: t("Could not prepare the destination: {}", prepare.stderr.trimmed)
+        )
+
+        do {
+            report(.transferring, nil, 0)
+
+            let sourceCommand = ThrowCommand.source(
+                directory: job.sourceDir,
+                entries: job.entries,
+                mode: job.mode
+            )
+            let destinationCommand = ThrowCommand.destination(
+                root: tempDir,
+                entries: job.entries,
+                mode: job.mode
+            )
+
+            let streamed = try await stream(
+                source: .local,
+                sourceCommand: sourceCommand,
+                destination: destination,
+                destinationCommand: destinationCommand,
+                localFile: nil,
+                expectedBytes: job.totalBytes,
+                showProgress: job.mode == .direct,
+                cancellation: cancellation,
+                report: report
+            )
+
+            if cancellation.isCancelled { throw ThrowCancelled() }
+            try checkStream(streamed, cancellation: cancellation)
+
+            if job.mode == .archive {
+                report(.unpacking, nil, nil)
+            }
+            report(.verifying, nil, nil)
+
+            let sourceBytes = localSourceBytes(
+                directory: job.sourceDir,
+                entries: job.entries
+            )
+            let destinationBytes = try await exactBytes(destination, paths: [tempDir])
+
+            if cancellation.isCancelled { throw ThrowCancelled() }
+            guard sourceBytes == destinationBytes else {
+                throw TossError(t("Verification failed: source {} bytes, destination {} bytes",
+                                  sourceBytes, destinationBytes))
+            }
+
+            let move = try await runSSH(
+                destination,
+                ThrowCommand.moveScript(temp: tempDir, target: targetDir)
+            )
+            try requireSuccess(
+                move,
+                cancellation: cancellation,
+                message: t("Could not move the transfer into place: {}", move.stderr.trimmed)
+            )
+
+            report(.finished, 1, destinationBytes)
+        } catch {
+            _ = try? await runSSH(destination, "rm -rf \(ThrowCommand.remoteQuote(tempDir))")
+            throw error
+        }
+    }
+
     // MARK: - 字节校验
+
+    private func localSourceBytes(directory: String, entries: [ThrowEntry]) -> Int64 {
+        entries.reduce(0) { total, entry in
+            let path = (ThrowCommand.join(directory, entry.name) as NSString).expandingTildeInPath
+            return total + exactLocalBytes(URL(fileURLWithPath: path))
+        }
+    }
 
     private func exactBytes(_ server: ServerConfig, paths: [String]) async throws -> Int64 {
         guard !paths.isEmpty else { return 0 }
@@ -305,8 +468,14 @@ struct ThrowService {
         let stderr: String
     }
 
+    /// 流的源头：远端 SSH 进程，或本机 `/bin/sh`。
+    private enum SourceEndpoint {
+        case remote(ServerConfig)
+        case local
+    }
+
     private func stream(
-        source: ServerConfig,
+        source: SourceEndpoint,
         sourceCommand: String,
         destination: ServerConfig?,
         destinationCommand: String,
@@ -339,7 +508,7 @@ struct ThrowService {
     }
 
     private func streamSync(
-        source: ServerConfig,
+        source: SourceEndpoint,
         sourceCommand: String,
         destination: ServerConfig?,
         destinationCommand: String,
@@ -364,8 +533,15 @@ struct ThrowService {
 
         let sourceErr = try FileHandle(forWritingTo: sourceErrURL)
         let sourceProcess = Process()
-        sourceProcess.executableURL = URL(fileURLWithPath: Self.sshPath)
-        sourceProcess.arguments = sshOptions(port: source.port) + [source.address, sourceCommand]
+        switch source {
+        case .remote(let server):
+            sourceProcess.executableURL = URL(fileURLWithPath: Self.sshPath)
+            sourceProcess.arguments = sshOptions(port: server.port) + [server.address, sourceCommand]
+        case .local:
+            sourceProcess.executableURL = URL(fileURLWithPath: Self.shPath)
+            sourceProcess.arguments = ["-c", sourceCommand]
+            sourceProcess.environment = ProcessInfo.processInfo.environment
+        }
         sourceProcess.standardOutput = sourceOut
         sourceProcess.standardError = sourceErr
 

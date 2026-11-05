@@ -1,10 +1,10 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// 选中服务器 = 源：列出该服务器收发目录里的条目，拖到下方投递口。
+/// 选中一台机器 = 源：列出它收发目录里的条目，拖到下方投递口。
 struct ThrowSourcePanel: View {
     @ObservedObject var state: AppState
-    let server: ServerConfig
+    let source: ThrowTarget
 
     @State private var entries: [ThrowEntry] = []
     @State private var selection = Set<String>()
@@ -13,14 +13,19 @@ struct ThrowSourcePanel: View {
     @State private var chosenDir: String?
 
     private var directories: [String] {
-        state.targetDirectories(for: server)
+        switch source {
+        case .server(let server):
+            return state.targetDirectories(for: server)
+        case .local:
+            return [state.localDeliveryDir]
+        }
     }
 
     private var directory: String {
         if let chosenDir, directories.contains(chosenDir) {
             return chosenDir
         }
-        return directories.first ?? state.effectiveTargetDir(for: server)
+        return directories.first ?? ""
     }
 
     var body: some View {
@@ -129,7 +134,7 @@ struct ThrowSourcePanel: View {
                 .padding(.leading, 2)
         }
         .task { await load() }
-        .onChange(of: server.name) { _ in
+        .onChange(of: source.id) { _ in
             chosenDir = nil
             Task { await load() }
         }
@@ -141,7 +146,7 @@ struct ThrowSourcePanel: View {
             : [entry]
 
         let payload = ThrowPayload(
-            source: server,
+            source: source,
             sourceDir: directory,
             entries: chosen
         )
@@ -157,7 +162,7 @@ struct ThrowSourcePanel: View {
         error = nil
 
         do {
-            let loaded = try await state.throwing.browse(server: server, directory: targetDir)
+            let loaded = try await state.throwing.browse(source: source, directory: targetDir)
             guard targetDir == directory else { return }
             entries = loaded
             selection = selection.filter { name in loaded.contains { $0.name == name } }

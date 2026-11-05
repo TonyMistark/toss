@@ -3,8 +3,8 @@ import Foundation
 
 // MARK: - 投递目标
 
-/// 文件可以落在哪里：另一台服务器，或者这台 Mac。
-enum ThrowTarget: Hashable, Identifiable {
+/// 文件从哪里来、落到哪里：另一台服务器，或者这台 Mac。
+enum ThrowTarget: Hashable, Identifiable, Codable {
     case server(ServerConfig)
     case local
 
@@ -46,6 +46,26 @@ enum ThrowTarget: Hashable, Identifiable {
     }
 }
 
+/// 可投递的去处：排除来源自己，避免「自己拖自己」。
+enum ThrowTargets {
+    static func destinations(servers: [ServerConfig], source: ThrowTarget) -> [ThrowTarget] {
+        let sourceName: String?
+        if case .server(let server) = source {
+            sourceName = server.name
+        } else {
+            sourceName = nil
+        }
+
+        var result = servers
+            .filter { $0.name != sourceName }
+            .map { ThrowTarget.server($0) }
+        if !source.isLocal {
+            result.append(.local)
+        }
+        return result
+    }
+}
+
 // MARK: - 源条目
 
 /// 源服务器收发目录里的一个条目。名称在同一个目录里唯一，直接当 id。
@@ -59,10 +79,10 @@ struct ThrowEntry: Identifiable, Codable, Hashable {
     var sizeText: String { ByteCount.format(byteSize) }
 }
 
-/// 一次拖拽带的内容：从哪个服务器的哪个目录，拖了哪些条目。
+/// 一次拖拽带的内容：从哪个机器（服务器或本机）的哪个目录，拖了哪些条目。
 struct ThrowPayload: Identifiable, Codable {
     var id = UUID()
-    var source: ServerConfig
+    var source: ThrowTarget
     var sourceDir: String
     var entries: [ThrowEntry]
 
@@ -148,7 +168,7 @@ enum TransferStage: String {
 
 struct TransferJob: Identifiable {
     let id: UUID
-    let source: ServerConfig
+    let source: ThrowTarget
     let sourceDir: String
     let target: ThrowTarget
     let targetDir: String
@@ -161,7 +181,7 @@ struct TransferJob: Identifiable {
     var message: String?
 
     init(
-        source: ServerConfig,
+        source: ThrowTarget,
         sourceDir: String,
         target: ThrowTarget,
         targetDir: String,
@@ -185,7 +205,7 @@ struct TransferJob: Identifiable {
     }
 
     var title: String {
-        "\(source.name) → \(target.displayName)"
+        "\(source.displayName) → \(target.displayName)"
     }
 
     var entrySummary: String {
