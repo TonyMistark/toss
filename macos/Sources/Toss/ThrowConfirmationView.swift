@@ -138,9 +138,11 @@ struct ThrowConfirmationView: View {
     private var header: some View {
         HStack(spacing: 12) {
             endpoint(
-                icon: "server.rack",
-                title: pending.payload.source.name,
-                subtitle: "\(pending.payload.source.address):\(pending.payload.sourceDir)"
+                icon: pending.payload.source.isLocal ? "laptopcomputer" : "server.rack",
+                title: pending.payload.source.displayName,
+                subtitle: pending.payload.source.isLocal
+                    ? pending.payload.sourceDir
+                    : "\(pending.payload.source.server?.address ?? ""):\(pending.payload.sourceDir)"
             )
 
             Image(systemName: "arrow.right")

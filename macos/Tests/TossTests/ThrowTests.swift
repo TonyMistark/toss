@@ -96,6 +96,94 @@ struct TargetDirectoriesTests {
     }
 }
 
+// MARK: - 投递去向
+
+@Suite("投递去向")
+struct ThrowDestinationsTests {
+    private let a = ServerConfig(name: "a", host: "a.local")
+    private let b = ServerConfig(name: "b", host: "b.local")
+
+    @Test("服务器作为来源时不出现自己，本机作为来源时不出现本机")
+    func excludesTheSource() {
+        #expect(
+            ThrowTargets.destinations(servers: [a, b], source: .server(a))
+                == [.server(b), .local]
+        )
+        #expect(
+            ThrowTargets.destinations(servers: [a, b], source: .local)
+                == [.server(a), .server(b)]
+        )
+    }
+
+    @Test("本机作为来源能编码进拖拽数据，往返不丢信息")
+    func encodesLocalSource() throws {
+        let payload = ThrowPayload(
+            source: .local,
+            sourceDir: "/Users/ice/.toss",
+            entries: [ThrowEntry(name: "report.pdf", isDirectory: false, byteSize: 12)]
+        )
+        let decoded = try JSONDecoder().decode(
+            ThrowPayload.self,
+            from: JSONEncoder().encode(payload)
+        )
+        #expect(decoded.source == .local)
+        #expect(decoded.sourceDir == "/Users/ice/.toss")
+        #expect(decoded.entries == payload.entries)
+    }
+}
+
+// MARK: - 本机目录浏览
+
+@Suite("本机目录浏览")
+struct LocalBrowseTests {
+    @Test("文件按字节、目录递归求和，隐藏文件也在")
+    func listsLocalDirectory() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("toss-local-browse-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        try "12345".write(
+            to: root.appendingPathComponent("report.txt"),
+            atomically: true,
+            encoding: .utf8
+        )
+        try "key".write(
+            to: root.appendingPathComponent(".env"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let sub = root.appendingPathComponent("photos", isDirectory: true)
+        try FileManager.default.createDirectory(at: sub, withIntermediateDirectories: true)
+        try "abc".write(
+            to: sub.appendingPathComponent("a.txt"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let entries = try ThrowService().browseLocal(directory: root.path)
+
+        #expect(entries.count == 3)
+        #expect(entries.first { $0.name == "report.txt" }?.byteSize == 5)
+        #expect(entries.first { $0.name == ".env" }?.byteSize == 3)
+        #expect(entries.first { $0.name == "photos" }?.isDirectory == true)
+        #expect(entries.first { $0.name == "photos" }?.byteSize == 3)
+    }
+
+    @Test("目录不存在时先建出来，列表为空而不是报错")
+    func createsMissingDirectory() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("toss-local-empty-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let entries = try ThrowService().browseLocal(directory: root.path)
+
+        #expect(entries.isEmpty)
+        #expect(FileManager.default.fileExists(atPath: root.path))
+    }
+}
+
 // MARK: - 传输方式
 
 @Suite("投递计划")
@@ -103,7 +191,7 @@ struct ThrowPlanTests {
     private let server = ServerConfig(name: "prod", host: "10.0.0.1")
 
     private func payload(_ entries: [ThrowEntry]) -> ThrowPayload {
-        ThrowPayload(source: server, sourceDir: "/srv", entries: entries)
+        ThrowPayload(source: .server(server), sourceDir: "/srv", entries: entries)
     }
 
     @Test("单文件直传")
@@ -266,7 +354,7 @@ struct ThrowCommandTests {
 struct TransferQueueTests {
     private func makeJob(_ name: String) -> TransferJob {
         TransferJob(
-            source: ServerConfig(name: "src", host: "127.0.0.1"),
+            source: .server(ServerConfig(name: "src", host: "127.0.0.1")),
             sourceDir: "/tmp",
             target: .local,
             targetDir: "/tmp",

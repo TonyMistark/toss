@@ -15,18 +15,15 @@ enum Brand {
 /// 其余服务器 + 本机：一排大号堆叠投递口。
 struct ThrowDockView: View {
     @ObservedObject var state: AppState
-    let source: ServerConfig
+    let source: ThrowTarget
 
     private var targets: [ThrowTarget] {
-        state.servers
-            .filter { $0.name != source.name }
-            .map { ThrowTarget.server($0) }
-            + [.local]
+        ThrowTargets.destinations(servers: state.servers, source: source)
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(t("Drop into another server or this Mac"))
+            Text(title)
                 .font(.caption2)
                 .foregroundStyle(.tertiary)
                 .padding(.horizontal, 20)
@@ -50,6 +47,10 @@ struct ThrowDockView: View {
         }
         .frame(height: 176)
         .background(.regularMaterial)
+    }
+
+    private var title: String {
+        source.isLocal ? t("Drop into a server") : t("Drop into another server or this Mac")
     }
 
     private func cardWidth(available: CGFloat) -> CGFloat {

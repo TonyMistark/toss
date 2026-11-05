@@ -4,7 +4,8 @@ import SwiftUI
 @MainActor
 final class AppState: ObservableObject {
     @Published private(set) var config: TossConfig
-    @Published var selectedServerName: String?
+    /// 左侧侧边栏选中项：某台服务器，或本机。
+    @Published var selectedTarget: ThrowTarget?
     @Published private(set) var output: String = ""
     @Published private(set) var busy = false
     @Published private(set) var configExists: Bool
@@ -19,7 +20,7 @@ final class AppState: ObservableObject {
     init() {
         let loaded = TossConfig.load()
         self.config = loaded
-        self.selectedServerName = loaded.servers.first?.name
+        self.selectedTarget = loaded.servers.first.map { .server($0) } ?? .local
         self.configExists = FileManager.default.fileExists(atPath: loaded.path.path)
 
         try? FileManager.default.createDirectory(
@@ -30,10 +31,7 @@ final class AppState: ObservableObject {
 
     var servers: [ServerConfig] { config.servers }
 
-    var selectedServer: ServerConfig? {
-        guard let name = selectedServerName else { return nil }
-        return config.servers.first { $0.name == name }
-    }
+    var selectedServer: ServerConfig? { selectedTarget?.server }
 
     var configPath: URL { config.path }
 
@@ -48,12 +46,15 @@ final class AppState: ObservableObject {
     var localDeliveryDir: String { LocalDelivery.directory }
 
     /// 松手后先记下待确认的投递，不直接开始传输。
-    /// 只接受来自当前配置里真实存在的服务器，防止伪造的拖拽数据。
+    /// 服务器来源必须是配置里真实存在的，防止伪造的拖拽数据；自己拖给自己直接忽略。
     func beginThrow(payload: ThrowPayload, target: ThrowTarget) {
-        guard !payload.entries.isEmpty,
-              let known = servers.first(where: { $0.name == payload.source.name }),
-              known == payload.source
-        else { return }
+        guard !payload.entries.isEmpty, payload.source != target else { return }
+
+        if case .server(let source) = payload.source {
+            guard let known = servers.first(where: { $0.name == source.name }),
+                  known == source
+            else { return }
+        }
 
         let directory: String
         switch target {
@@ -97,8 +98,13 @@ final class AppState: ObservableObject {
     func reload() {
         config = TossConfig.load()
         configExists = FileManager.default.fileExists(atPath: config.path.path)
-        if !config.servers.contains(where: { $0.name == selectedServerName }) {
-            selectedServerName = config.servers.first?.name
+        if case .server(let selected) = selectedTarget {
+            // 重新加载后配置对象是新的实例；选中项换成新实例，列表才保持高亮。
+            selectedTarget = config.servers
+                .first { $0.name == selected.name }
+                .map { .server($0) }
+                ?? config.servers.first.map { .server($0) }
+                ?? .local
         }
     }
 
@@ -147,8 +153,9 @@ final class AppState: ObservableObject {
         do {
             try config.save()
             configExists = true
-            if selectedServerName == originalName || selectedServerName == nil {
-                selectedServerName = server.name
+            let selectedName = selectedTarget?.server?.name
+            if selectedName == originalName || selectedName == nil {
+                selectedTarget = .server(server)
             }
         } catch {
             config = previous
@@ -162,8 +169,8 @@ final class AppState: ObservableObject {
         do {
             try config.save()
             configExists = true
-            if selectedServerName == name {
-                selectedServerName = config.servers.first?.name
+            if case .server(let selected) = selectedTarget, selected.name == name {
+                selectedTarget = config.servers.first.map { .server($0) } ?? .local
             }
         } catch {
             config = previous

@@ -55,33 +55,22 @@ struct ContentView: View {
 
     private var sidebar: some View {
         VStack(spacing: 0) {
-            if state.servers.isEmpty {
-                VStack(spacing: 10) {
-                    Image(systemName: "server.rack")
-                        .font(.system(size: 32))
-                        .symbolRenderingMode(.hierarchical)
-                        .foregroundStyle(.tertiary)
-                    Text(t("No servers yet"))
-                        .font(.headline)
-                    Text(t("Use the Add button below or + in the toolbar"))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+            List(selection: $state.selectedTarget) {
+                Section {
+                    Text(t("This Mac"))
+                        .lineLimit(1)
+                        .tag(ThrowTarget.local)
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else {
-                List(selection: $state.selectedServerName) {
-                    Section(t("Servers")) {
-                        ForEach(state.servers) { server in
-                            ServerRow(
-                                server: server,
-                                targetDir: state.effectiveTargetDir(for: server)
-                            )
-                            .tag(server.name as String?)
-                        }
+
+                Section(t("Servers")) {
+                    ForEach(state.servers) { server in
+                        Text(server.name)
+                            .lineLimit(1)
+                            .tag(ThrowTarget.server(server))
                     }
                 }
-                .listStyle(.sidebar)
             }
+            .listStyle(.sidebar)
 
             if !state.configExists {
                 VStack(alignment: .leading, spacing: 6) {
@@ -117,15 +106,20 @@ struct ContentView: View {
 
     private var detail: some View {
         Group {
-            if let server = state.selectedServer {
+            if let target = state.selectedTarget {
                 VStack(spacing: 0) {
-                    ServerDetailView(state: state, server: server) {
-                        editorTarget = .edit(server)
+                    switch target {
+                    case .server(let server):
+                        ServerDetailView(state: state, server: server) {
+                            editorTarget = .edit(server)
+                        }
+                        .id(server.name)
+                    case .local:
+                        LocalDetailView(state: state)
                     }
-                    .id(server.name)
 
                     Divider()
-                    ThrowDockView(state: state, source: server)
+                    ThrowDockView(state: state, source: target)
 
                     Divider()
                     TransferQueueView(queue: state.queue)
@@ -136,11 +130,8 @@ struct ContentView: View {
                         .font(.system(size: 40))
                         .symbolRenderingMode(.hierarchical)
                         .foregroundStyle(.tertiary)
-                    Text(t("Choose or add a server"))
+                    Text(t("Pick a machine on the left"))
                         .font(.title3)
-                    Text(t("Pick a server on the left to send, pull, and browse files."))
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
@@ -152,35 +143,35 @@ struct ContentView: View {
     }
 }
 
-struct ServerRow: View {
-    let server: ServerConfig
-    let targetDir: String
+/// 选中本机：把 ~/.toss 里的东西拖到服务器上，就是上传。
+struct LocalDetailView: View {
+    @ObservedObject var state: AppState
 
     var body: some View {
-        HStack(spacing: 10) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    .fill(Color.primary.opacity(0.05))
-                    .frame(width: 26, height: 26)
-                Image(systemName: "server.rack")
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(.secondary)
-            }
+        VStack(spacing: 0) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(t("This Mac"))
+                        .font(.title2.weight(.semibold))
+                    Text(state.localDeliveryDir)
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text(server.name)
-                    .font(.callout.weight(.semibold))
-                Text(server.address)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                Text(targetDir)
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
+                Spacer()
             }
+            .padding(20)
+
+            Divider()
+                .padding(.bottom, 8)
+
+            ThrowSourcePanel(state: state, source: .local)
+                .padding(.horizontal, 20)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
-        .padding(.vertical, 3)
     }
 }
 
