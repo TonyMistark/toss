@@ -255,16 +255,20 @@ struct FolderBrowserPanel: View {
         load.error = nil
         folders[directory] = load
 
+        OperationLog.info(t("Loading {} from {}", directory, source.displayName))
+
         do {
             let entries = try await state.throwing.browse(source: source, directory: directory)
             guard directories.contains(directory) else { return }
             folders[directory] = FolderLoad(entries: entries, loading: false)
+            OperationLog.success(t("Loaded {}: {} items", directory, entries.count))
 
             let valid = Set(entries.map(\.name))
             selections[directory] = (selections[directory] ?? []).intersection(valid)
         } catch {
             guard directories.contains(directory) else { return }
             folders[directory] = FolderLoad(error: error.localizedDescription)
+            OperationLog.error(t("Could not load {}: {}", directory, error.localizedDescription))
         }
     }
 }

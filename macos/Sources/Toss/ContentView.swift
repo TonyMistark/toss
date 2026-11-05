@@ -19,6 +19,7 @@ struct ContentView: View {
     @ObservedObject var state: AppState
 
     @State private var editorTarget: ServerEditorTarget?
+    @State private var showLog = false
 
     var body: some View {
         HSplitView {
@@ -40,6 +41,13 @@ struct ContentView: View {
                     Label(t("Reload Configuration"), systemImage: "arrow.clockwise")
                 }
                 .help(t("Reload ~/.toss/config.json"))
+
+                Button {
+                    showLog = true
+                } label: {
+                    Label(t("Execution Log"), systemImage: "doc.text.magnifyingglass")
+                }
+                .help(t("Show all operations in this run"))
             }
 
             ToolbarItem(placement: .primaryAction) {
@@ -50,6 +58,9 @@ struct ContentView: View {
         }
         .sheet(item: $editorTarget) { target in
             ServerEditorView(state: state, target: target)
+        }
+        .sheet(isPresented: $showLog) {
+            ExecutionLogView()
         }
     }
 

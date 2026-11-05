@@ -61,6 +61,7 @@ final class TransferQueue: ObservableObject {
     private let perform: Performer
     private var runningID: UUID?
     private var cancellations: [UUID: ThrowCancellation] = [:]
+    private var progressBuckets: [UUID: Int] = [:]
 
     init(perform: @escaping Performer = { job, report, cancellation in
         try await ThrowService().run(job, cancellation: cancellation, report: report)
@@ -76,6 +77,7 @@ final class TransferQueue: ObservableObject {
 
     func enqueue(_ job: TransferJob) {
         jobs.append(job)
+        OperationLog.info(t("Queued job {}: {}", tag(job.id), route(job)))
         startNextIfNeeded()
     }
 
@@ -85,9 +87,11 @@ final class TransferQueue: ObservableObject {
         // 还没轮到它：直接标记取消，不需要终止进程。
         if runningID != id && job.stage == .queued {
             update(id) { $0.stage = .cancelled }
+            OperationLog.warning(t("Cancelled job {} before it started", tag(id)))
             return
         }
 
+        OperationLog.warning(t("Cancelling job {}", tag(id)))
         cancellations[id]?.cancel()
     }
 
@@ -101,11 +105,17 @@ final class TransferQueue: ObservableObject {
             item.bytesTransferred = 0
             item.message = nil
         }
+        progressBuckets[id] = nil
+        OperationLog.info(t("Retry job {}: {}", tag(id), route(job)))
         startNextIfNeeded()
     }
 
     func clearFinished() {
+        let finished = jobs.filter { $0.stage.isFinished }.count
         jobs.removeAll { $0.stage.isFinished }
+        if finished > 0 {
+            OperationLog.info(t("Cleared {} finished jobs", finished))
+        }
     }
 
     /// 本机目标在访达里打开；远程目标复制 `user@host:/path` 方便粘贴。
@@ -116,6 +126,7 @@ final class TransferQueue: ObservableObject {
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setString(path, forType: .string)
             update(id) { $0.message = t("Copied the remote path") }
+            OperationLog.info(t("Copied the remote path: {}", path))
             return
         }
 
@@ -123,8 +134,10 @@ final class TransferQueue: ObservableObject {
         let url = URL(fileURLWithPath: expanded)
         if FileManager.default.fileExists(atPath: url.path) {
             NSWorkspace.shared.open(url)
+            OperationLog.info(t("Opened {}", url.path))
         } else {
             update(id) { $0.message = t("Could not open the destination: {}", url.path) }
+            OperationLog.warning(t("Could not open the destination: {}", url.path))
         }
     }
 
@@ -138,6 +151,7 @@ final class TransferQueue: ObservableObject {
         let cancellation = ThrowCancellation()
         runningID = id
         cancellations[id] = cancellation
+        OperationLog.info(t("Started job {}: {}", tag(id), route(pending)))
 
         Task { [weak self] in
             guard let self else { return }
@@ -169,12 +183,25 @@ final class TransferQueue: ObservableObject {
                 job.message = nil
             }
         }
+
+        if cancellation.isCancelled {
+            OperationLog.warning(t("Job {} cancelled", tag(id)))
+        } else if let error {
+            OperationLog.error(t("Job {} failed: {}", tag(id), error.localizedDescription))
+        } else {
+            let elapsed = String(format: "%.1f", Date().timeIntervalSince(job(with: id)?.createdAt ?? Date()))
+            OperationLog.success(t("Job {} finished in {}s", tag(id), elapsed))
+        }
+
+        progressBuckets[id] = nil
         cancellations[id] = nil
         runningID = nil
         startNextIfNeeded()
     }
 
     private func apply(id: UUID, stage: TransferStage, progress: Double?, bytes: Int64?) {
+        let previous = job(with: id)?.stage
+
         update(id) { job in
             // finish() 可能已经先把任务收尾；迟到的进度不能再把状态改回去。
             guard !job.stage.isFinished else { return }
@@ -186,6 +213,20 @@ final class TransferQueue: ObservableObject {
                 job.bytesTransferred = bytes
             }
         }
+
+        guard let previous, !previous.isFinished, previous != stage else { return }
+        OperationLog.info(t("Job {} stage: {}", tag(id), stage.label))
+
+        guard stage == .transferring else { return }
+        let bucket = min(10, max(0, Int((progress ?? 0) * 10)))
+        if bucket > (progressBuckets[id] ?? 0) {
+            progressBuckets[id] = bucket
+            OperationLog.info(t("Job {} progress: {}% ({}/{})",
+                                tag(id),
+                                bucket * 10,
+                                ByteCount.format(bytes ?? 0),
+                                ByteCount.format(job(with: id)?.totalBytes ?? 0)))
+        }
     }
 
     private func update(_ id: UUID, _ change: (inout TransferJob) -> Void) {
@@ -195,5 +236,13 @@ final class TransferQueue: ObservableObject {
 
     private func job(with id: UUID) -> TransferJob? {
         jobs.first { $0.id == id }
+    }
+
+    private func tag(_ id: UUID) -> String {
+        String(id.uuidString.prefix(8))
+    }
+
+    private func route(_ job: TransferJob) -> String {
+        "\(LogFormat.location(job.source, directory: job.sourceDir)) → \(LogFormat.location(job.target, directory: job.targetDir))"
     }
 }

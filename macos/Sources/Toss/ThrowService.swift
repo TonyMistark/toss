@@ -129,6 +129,7 @@ struct ThrowService {
             cancellation: cancellation,
             message: t("Could not prepare the destination: {}", prepare.stderr.trimmed)
         )
+        OperationLog.success(t("Prepared {} on {}", targetDir, destination.name))
 
         do {
             report(.transferring, nil, 0)
@@ -175,6 +176,7 @@ struct ThrowService {
                 throw TossError(t("Verification failed: source {} bytes, destination {} bytes",
                                   sourceBytes, destinationBytes))
             }
+            OperationLog.info(t("Verified {} bytes", destinationBytes))
 
             let move = try await runSSH(
                 destination,
@@ -185,10 +187,12 @@ struct ThrowService {
                 cancellation: cancellation,
                 message: t("Could not move the transfer into place: {}", move.stderr.trimmed)
             )
+            OperationLog.success(t("Placed into {}", targetDir))
 
             report(.finished, 1, destinationBytes)
         } catch {
             _ = try? await runSSH(destination, "rm -rf \(ThrowCommand.remoteQuote(tempDir))")
+            OperationLog.warning(t("Removed temporary folder {}", tempDir))
             throw error
         }
     }
@@ -206,6 +210,7 @@ struct ThrowService {
 
         do {
             try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
+            OperationLog.info(t("Prepared {} on {}", expanded, t("This Mac")))
         } catch {
             throw TossError(t("Could not create the target folder: {}", error.localizedDescription))
         }
@@ -284,11 +289,14 @@ struct ThrowService {
                               sourceBytes, localBytes))
         }
 
+        OperationLog.info(t("Verified {} bytes", sourceBytes))
+
         if job.mode == .direct {
             try moveFile(payloadURL, into: destination)
         } else {
             try moveContents(of: payloadURL, into: destination)
         }
+        OperationLog.success(t("Placed into {}", destination.path))
 
         report(.finished, 1, sourceBytes)
     }
@@ -320,6 +328,7 @@ struct ThrowService {
             cancellation: cancellation,
             message: t("Could not prepare the destination: {}", prepare.stderr.trimmed)
         )
+        OperationLog.success(t("Prepared {} on {}", targetDir, destination.name))
 
         do {
             report(.transferring, nil, 0)
@@ -366,6 +375,7 @@ struct ThrowService {
                 throw TossError(t("Verification failed: source {} bytes, destination {} bytes",
                                   sourceBytes, destinationBytes))
             }
+            OperationLog.info(t("Verified {} bytes", destinationBytes))
 
             let move = try await runSSH(
                 destination,
@@ -376,10 +386,12 @@ struct ThrowService {
                 cancellation: cancellation,
                 message: t("Could not move the transfer into place: {}", move.stderr.trimmed)
             )
+            OperationLog.success(t("Placed into {}", targetDir))
 
             report(.finished, 1, destinationBytes)
         } catch {
             _ = try? await runSSH(destination, "rm -rf \(ThrowCommand.remoteQuote(tempDir))")
+            OperationLog.warning(t("Removed temporary folder {}", tempDir))
             throw error
         }
     }
@@ -583,6 +595,12 @@ struct ThrowService {
             throw TossError(t("Could not start the transfer: {}", error.localizedDescription))
         }
 
+        OperationLog.info(t("Stream source: {}", LogFormat.truncate(sourceCommand, 360)))
+        if let destination {
+            OperationLog.info(t("Stream destination ({}): {}", destination.name,
+                                LogFormat.truncate(destinationCommand, 360)))
+        }
+
         let readHandle = sourceOut.fileHandleForReading
         let writeHandle = localHandle ?? destinationIn?.fileHandleForWriting
 
@@ -637,11 +655,23 @@ struct ThrowService {
             : nil
         report(.transferring, progress, count)
 
+        let sourceCode = sourceProcess.terminationStatus
+        let destinationCode = destinationProcess?.terminationStatus ?? 0
+        let sourceErrorText = readText(sourceErrURL)
+        let destinationErrorText = readText(destinationErrURL)
+
+        if sourceCode == 0 && destinationCode == 0 {
+            OperationLog.success(t("Stream finished: {}", ByteCount.format(count)))
+        } else {
+            OperationLog.error(t("Stream failed ({} / {}): {}", sourceCode, destinationCode,
+                                 LogFormat.truncate((sourceErrorText + destinationErrorText).trimmed, 400)))
+        }
+
         return StreamResult(
-            sourceCode: sourceProcess.terminationStatus,
-            sourceError: readText(sourceErrURL),
-            destinationCode: destinationProcess?.terminationStatus ?? 0,
-            destinationError: readText(destinationErrURL)
+            sourceCode: sourceCode,
+            sourceError: sourceErrorText,
+            destinationCode: destinationCode,
+            destinationError: destinationErrorText
         )
     }
 
@@ -658,8 +688,12 @@ struct ThrowService {
 
     private func runProcess(_ executable: String, _ arguments: [String]) async throws -> ProcessResult {
         guard FileManager.default.isExecutableFile(atPath: executable) else {
+            OperationLog.error(t("System command not found: {}", executable))
             throw TossError(t("System command not found: {}", executable))
         }
+
+        let command = LogFormat.truncate(([executable] + arguments).joined(separator: " "), 400)
+        OperationLog.info(t("Run: {}", command))
 
         return try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
@@ -695,12 +729,21 @@ struct ThrowService {
                     let stderr = (try? Data(contentsOf: stderrURL))
                         .flatMap { String(data: $0, encoding: .utf8) } ?? ""
 
+                    if process.terminationStatus == 0 {
+                        OperationLog.success(t("Done (exit {}): {}", process.terminationStatus,
+                                               LogFormat.truncate(command, 140)))
+                    } else {
+                        OperationLog.error(t("Exit {}: {}", process.terminationStatus,
+                                            LogFormat.truncate(stderr.trimmed, 320)))
+                    }
+
                     continuation.resume(returning: ProcessResult(
                         code: process.terminationStatus,
                         stdout: stdout,
                         stderr: stderr
                     ))
                 } catch {
+                    OperationLog.error(t("Could not run {}: {}", executable, error.localizedDescription))
                     continuation.resume(throwing: TossError(
                         t("Could not run {}: {}", executable, error.localizedDescription)
                     ))
