@@ -132,6 +132,36 @@ struct ThrowDestinationsTests {
     }
 }
 
+// MARK: - 执行日志
+
+@Suite("执行日志缓冲")
+struct LogBufferTests {
+    private func makeEntry(_ message: String) -> LogEntry {
+        LogEntry(date: Date(), level: .info, message: message)
+    }
+
+    @Test("超出上限时只保留最新的条目")
+    func trimsOldestEntries() {
+        var buffer = LogBuffer(limit: 3)
+        for index in 1...5 {
+            buffer.append(makeEntry("line \(index)"))
+        }
+        #expect(buffer.entries.count == 3)
+        #expect(buffer.entries.map(\.message) == ["line 3", "line 4", "line 5"])
+    }
+
+    @Test("清空后可以重新记录")
+    func clearsAndRestarts() {
+        var buffer = LogBuffer(limit: 10)
+        buffer.append(makeEntry("a"))
+        buffer.removeAll()
+        #expect(buffer.entries.isEmpty)
+
+        buffer.append(makeEntry("b"))
+        #expect(buffer.entries.map(\.message) == ["b"])
+    }
+}
+
 // MARK: - 篮筐选择
 
 @Suite("文件夹篮筐")

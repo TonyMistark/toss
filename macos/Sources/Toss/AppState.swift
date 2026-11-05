@@ -21,6 +21,10 @@ final class AppState: ObservableObject {
             at: URL(fileURLWithPath: LocalDelivery.directory),
             withIntermediateDirectories: true
         )
+
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
+        OperationLog.info(t("Toss {} started", version))
+        OperationLog.info(t("Loaded {} servers from {}", loaded.servers.count, loaded.path.path))
     }
 
     var servers: [ServerConfig] { config.servers }
@@ -60,6 +64,12 @@ final class AppState: ObservableObject {
         guard let directory = BasketChoice.directory(targetDir, among: folders(for: target))
         else { return }
 
+        OperationLog.info(t("Throw {} ({}): {} → {}",
+                            LogFormat.truncate(LogFormat.entries(payload.entries), 80),
+                            ByteCount.format(payload.totalBytes),
+                            LogFormat.location(payload.source, directory: payload.sourceDir),
+                            LogFormat.location(target, directory: directory)))
+
         queue.enqueue(TransferJob(
             source: payload.source,
             sourceDir: payload.sourceDir,
@@ -73,19 +83,27 @@ final class AppState: ObservableObject {
         let trimmed = value.trimmed
         let expanded = (trimmed as NSString).expandingTildeInPath
         guard expanded.hasPrefix("/") else {
+            OperationLog.error(t("Invalid local folder: {}", value))
             throw TossError(t("Enter an absolute path, or one starting with ~"))
         }
 
-        try FileManager.default.createDirectory(
-            at: URL(fileURLWithPath: expanded),
-            withIntermediateDirectories: true
-        )
+        do {
+            try FileManager.default.createDirectory(
+                at: URL(fileURLWithPath: expanded),
+                withIntermediateDirectories: true
+            )
+        } catch {
+            OperationLog.error(t("Could not create the local folder: {}", error.localizedDescription))
+            throw error
+        }
         LocalDelivery.setDirectory(trimmed)
+        OperationLog.info(t("Local folder set to {}", trimmed))
     }
 
     func reload() {
         config = TossConfig.load()
         configExists = FileManager.default.fileExists(atPath: config.path.path)
+        OperationLog.info(t("Reloaded configuration: {} servers", config.servers.count))
         if case .server(let selected) = selectedTarget {
             // 重新加载后配置对象是新的实例；选中项换成新实例，列表才保持高亮。
             selectedTarget = config.servers
@@ -100,8 +118,9 @@ final class AppState: ObservableObject {
         do {
             try config.save()
             configExists = true
+            OperationLog.success(t("Created the config file: {}", config.path.path))
         } catch {
-            // 侧边栏提示会在下次刷新时重新评估，这里保持静默。
+            OperationLog.error(t("Could not create the config: {}", error.localizedDescription))
         }
     }
 
@@ -111,8 +130,10 @@ final class AppState: ObservableObject {
         do {
             try config.save()
             configExists = true
+            OperationLog.info(t("Global folder set to {}", dir))
         } catch {
             config.globalTargetDir = previous
+            OperationLog.error(t("Could not save the config: {}", error.localizedDescription))
             throw error
         }
     }
@@ -144,8 +165,10 @@ final class AppState: ObservableObject {
             if selectedName == originalName || selectedName == nil {
                 selectedTarget = .server(server)
             }
+            OperationLog.success(t("Saved server {}: {}", server.name, server.address))
         } catch {
             config = previous
+            OperationLog.error(t("Could not save server {}: {}", server.name, error.localizedDescription))
             throw error
         }
     }
@@ -159,8 +182,10 @@ final class AppState: ObservableObject {
             if case .server(let selected) = selectedTarget, selected.name == name {
                 selectedTarget = config.servers.first.map { .server($0) } ?? .local
             }
+            OperationLog.success(t("Deleted server {}", name))
         } catch {
             config = previous
+            OperationLog.error(t("Could not delete server {}: {}", name, error.localizedDescription))
             throw error
         }
     }
