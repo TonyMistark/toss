@@ -141,15 +141,16 @@ struct SendPanel: View {
     @State private var isDropTargeted = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 14) {
             dropZone
 
-            HStack {
+            HStack(spacing: 10) {
                 Button {
                     addPaths(FileChooser.chooseFiles().map(\.path))
                 } label: {
-                    Label(t("Choose Files or Folders…"), systemImage: "plus.circle")
+                    Label(t("Choose Files or Folders…"), systemImage: "plus")
                 }
+                .buttonStyle(.bordered)
                 .disabled(state.busy)
 
                 Spacer()
@@ -189,16 +190,18 @@ struct SendPanel: View {
             )
             .textFieldStyle(.roundedBorder)
 
-            HStack {
-                Text(t("Folders are packed as tar.gz when sent"))
+            HStack(alignment: .firstTextBaseline) {
+                Label(t("Folders are packed as tar.gz when sent"), systemImage: "archivebox")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Spacer()
                 Button {
                     send()
                 } label: {
-                    Label(t("Send"), systemImage: "arrow.up.circle.fill")
+                    Label(t("Send"), systemImage: "arrow.up")
                 }
+                .buttonStyle(.borderedProminent)
+                .tint(Brand.green)
                 .keyboardShortcut(.return, modifiers: [.command])
                 .disabled(files.isEmpty || state.busy)
             }
@@ -206,29 +209,28 @@ struct SendPanel: View {
     }
 
     private var dropZone: some View {
-        VStack(spacing: 4) {
+        VStack(spacing: 5) {
             Image(systemName: isDropTargeted ? "arrow.down.circle.fill" : "tray.and.arrow.down")
-                .font(.title3)
-                .foregroundStyle(isDropTargeted ? Color.accentColor : Color.secondary)
+                .font(.system(size: 22, weight: .regular))
+                .symbolRenderingMode(.hierarchical)
+                .foregroundStyle(isDropTargeted ? Brand.green : Color.secondary)
             Text(isDropTargeted ? t("Drop to add") : t("Drag files or folders here"))
-                .font(.callout)
-                .foregroundStyle(isDropTargeted ? Color.accentColor : Color.secondary)
+                .font(.callout.weight(.medium))
+                .foregroundStyle(isDropTargeted ? Brand.green : Color.primary)
             Text(t("Or use the button below, or paste a path"))
                 .font(.caption2)
                 .foregroundStyle(.tertiary)
         }
-        .frame(maxWidth: .infinity, minHeight: 76)
+        .frame(maxWidth: .infinity, minHeight: 96)
         .background(
-            RoundedRectangle(cornerRadius: 8)
-                .fill(isDropTargeted ? Color.accentColor.opacity(0.08) : Color.secondary.opacity(0.04))
+            RoundedRectangle(cornerRadius: Brand.radius)
+                .fill(isDropTargeted ? Brand.green.opacity(0.08) : Color.primary.opacity(0.03))
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 8)
-                .strokeBorder(
-                    isDropTargeted ? Color.accentColor : Color.secondary.opacity(0.4),
-                    style: StrokeStyle(lineWidth: 1.5, dash: [6, 4])
-                )
+            RoundedRectangle(cornerRadius: Brand.radius)
+                .strokeBorder(isDropTargeted ? Brand.green.opacity(0.65) : Brand.hairline, lineWidth: 1)
         )
+        .animation(.spring(response: 0.28, dampingFraction: 0.82), value: isDropTargeted)
         .onDrop(
             of: [UTType.fileURL, UTType.url, UTType.plainText, UTType.item],
             isTargeted: $isDropTargeted,
@@ -238,28 +240,45 @@ struct SendPanel: View {
 
     private var fileList: some View {
         ScrollView {
-            VStack(spacing: 4) {
+            VStack(spacing: 2) {
                 ForEach(Array(files.enumerated()), id: \.offset) { index, url in
-                    HStack(spacing: 6) {
+                    HStack(spacing: 9) {
                         Image(systemName: isDirectory(url) ? "folder" : "doc")
-                            .foregroundStyle(.secondary)
-                        Text(url.path)
                             .font(.callout)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                        Spacer()
+                            .foregroundStyle(.secondary)
+                            .frame(width: 18)
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(url.lastPathComponent)
+                                .font(.callout)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                            Text(url.deletingLastPathComponent().path)
+                                .font(.caption2)
+                                .foregroundStyle(.tertiary)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                        }
+                        Spacer(minLength: 8)
                         Button {
                             files.remove(at: index)
                         } label: {
-                            Image(systemName: "xmark.circle.fill")
-                                .foregroundStyle(.secondary)
+                            Image(systemName: "xmark")
+                                .font(.caption.weight(.medium))
+                                .foregroundStyle(.tertiary)
                         }
-                        .buttonStyle(.borderless)
+                        .buttonStyle(.plain)
                     }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
                 }
             }
+            .padding(4)
         }
-        .frame(maxHeight: 120)
+        .frame(maxHeight: 132)
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(Color.primary.opacity(0.03))
+        )
     }
 
     private func send() {
@@ -480,52 +499,46 @@ struct PullPanel: View {
     @State private var pathMessage: String?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            TextField(t("Remote file, e.g. report.pdf or /var/tmp/backup.tar.gz"), text: $remoteFile)
-                .textFieldStyle(.roundedBorder)
+        VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(t("Remote file"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                TextField(t("e.g. report.pdf or /var/tmp/backup.tar.gz"), text: $remoteFile)
+                    .textFieldStyle(.roundedBorder)
+            }
 
-            HStack(spacing: 8) {
+            VStack(alignment: .leading, spacing: 6) {
                 Text(t("Save to"))
-                    .font(.callout)
+                    .font(.caption)
                     .foregroundStyle(.secondary)
 
-                HStack(spacing: 4) {
+                HStack(spacing: 8) {
                     TextField("", text: $outputDirText, prompt: Text(PullPanel.defaultOutputDir.path))
-                        .textFieldStyle(.plain)
+                        .textFieldStyle(.roundedBorder)
                         .labelsHidden()
                         .accessibilityLabel(t("Save to"))
+
                     Button {
                         chooseOutputDir()
                     } label: {
                         Image(systemName: "folder")
-                            .foregroundStyle(.secondary)
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.bordered)
                     .help(t("Choose a folder to save into"))
                     .disabled(state.busy)
                 }
-                .padding(.horizontal, 8)
-                .padding(.vertical, 5)
-                .background(
-                    RoundedRectangle(cornerRadius: 6)
-                        .fill(Color(nsColor: .textBackgroundColor))
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 6)
-                        .strokeBorder(Color.secondary.opacity(0.35), lineWidth: 1)
-                )
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-                Spacer(minLength: 0)
             }
 
             if let pathMessage {
-                Text(pathMessage)
+                Label(pathMessage, systemImage: "exclamationmark.circle.fill")
                     .font(.caption)
                     .foregroundStyle(.red)
+                    .lineLimit(2)
+                    .textSelection(.enabled)
             }
 
-            HStack {
+            HStack(alignment: .firstTextBaseline) {
                 Text(t("Relative paths are joined to the server's transfer folder"))
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -533,8 +546,10 @@ struct PullPanel: View {
                 Button {
                     pull()
                 } label: {
-                    Label(t("Pull"), systemImage: "arrow.down.circle.fill")
+                    Label(t("Pull"), systemImage: "arrow.down")
                 }
+                .buttonStyle(.borderedProminent)
+                .tint(Brand.green)
                 .keyboardShortcut(.return, modifiers: [.command])
                 .disabled(remoteFile.trimmed.isEmpty || state.busy)
             }
@@ -613,19 +628,37 @@ struct ListPanel: View {
     let server: ServerConfig
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Text(t("List {}:{}", server.address, state.effectiveTargetDir(for: server)))
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                Spacer()
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 12) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 9)
+                        .fill(Brand.green.opacity(0.10))
+                    Image(systemName: "folder")
+                        .font(.system(size: 15, weight: .medium))
+                        .foregroundStyle(Brand.green)
+                }
+                .frame(width: 38, height: 38)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(server.address)
+                        .font(.callout.weight(.medium))
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Text(state.effectiveTargetDir(for: server))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+
+                Spacer(minLength: 8)
+
                 Button {
                     refresh()
                 } label: {
                     Label(t("Refresh List"), systemImage: "arrow.clockwise")
                 }
+                .buttonStyle(.bordered)
                 .disabled(state.busy)
             }
 
@@ -633,6 +666,15 @@ struct ListPanel: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: Brand.radius)
+                .fill(.regularMaterial)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: Brand.radius)
+                .strokeBorder(Brand.hairline, lineWidth: 1)
+        )
     }
 
     private func refresh() {
@@ -648,10 +690,10 @@ struct OutputView: View {
     @ObservedObject var state: AppState
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
-                Text(t("Output"))
-                    .font(.caption)
+                Label(t("Output"), systemImage: "terminal")
+                    .font(.caption.weight(.medium))
                     .foregroundStyle(.secondary)
 
                 if state.busy {
@@ -667,8 +709,9 @@ struct OutputView: View {
                 Button(t("Clear")) {
                     state.clearOutput()
                 }
-                .buttonStyle(.borderless)
+                .buttonStyle(.plain)
                 .font(.caption)
+                .foregroundStyle(.secondary)
             }
 
             ScrollView {
@@ -677,12 +720,19 @@ struct OutputView: View {
                     .foregroundStyle(state.output.isEmpty ? .secondary : .primary)
                     .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(8)
+                    .padding(12)
             }
-            .background(Color(nsColor: .textBackgroundColor))
-            .clipShape(RoundedRectangle(cornerRadius: 6))
+            .background(
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(Color.primary.opacity(0.035))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 10)
+                    .strokeBorder(Brand.hairline, lineWidth: 1)
+            )
         }
-        .padding(16)
+        .padding(.horizontal, 20)
+        .padding(.vertical, 14)
         .frame(minHeight: 150, maxHeight: 220)
     }
 }
