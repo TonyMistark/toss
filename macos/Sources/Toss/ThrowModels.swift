@@ -199,13 +199,12 @@ enum LocalDelivery {
     static let preferenceKey = "toss.localDeliveryDir"
 
     static var defaultDirectory: String {
-        FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first?.path
-            ?? FileManager.default.homeDirectoryForCurrentUser
-                .appendingPathComponent("Downloads")
-                .path
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".toss")
+            .path
     }
 
-    /// 用户在设置里改过的目录；没改过就是 ~/Downloads。
+    /// 用户在设置里改过的目录；没改过就是 ~/.toss。
     static var directory: String {
         let raw = (UserDefaults.standard.string(forKey: preferenceKey) ?? "").trimmed
         let path = raw.isEmpty ? defaultDirectory : raw

@@ -131,9 +131,9 @@ private struct ThrowEntryRow: View {
 
     var body: some View {
         HStack(spacing: 9) {
-            Image(systemName: entry.isDirectory ? "folder" : "doc")
+            Image(systemName: entry.isDirectory ? "folder.fill" : "doc")
                 .font(.callout)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(entry.isDirectory ? Color.blue : Color.secondary)
                 .frame(width: 18, alignment: .leading)
             VStack(alignment: .leading, spacing: 2) {
                 Text(entry.name)

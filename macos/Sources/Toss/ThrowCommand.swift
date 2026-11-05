@@ -16,6 +16,11 @@ enum ThrowCommand {
         return quote(trimmed)
     }
 
+    /// 目录不存在时先建出来，保证默认的 `~/.toss` 在首次使用时也能直接浏览。
+    static func ensureDirectory(_ directory: String) -> String {
+        "mkdir -p \(remoteQuote(directory.trimmed))"
+    }
+
     static func join(_ directory: String, _ name: String) -> String {
         let base = directory.trimmed
         if base.hasSuffix("/") {

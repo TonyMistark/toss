@@ -16,7 +16,8 @@ struct ThrowService {
             throw TossError(t("Transfer folder cannot be empty"))
         }
 
-        let result = try await runSSH(server, ThrowCommand.list(directory: dir))
+        let script = "\(ThrowCommand.ensureDirectory(dir)) && \(ThrowCommand.list(directory: dir))"
+        let result = try await runSSH(server, script)
         guard result.code == 0 else {
             throw TossError(
                 t("Listing failed: {}\nHint: check the server address and SSH key (ssh {})",
