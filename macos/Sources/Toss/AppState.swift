@@ -6,16 +6,10 @@ final class AppState: ObservableObject {
     @Published private(set) var config: TossConfig
     /// 左侧侧边栏选中项：某台服务器，或本机。
     @Published var selectedTarget: ThrowTarget?
-    @Published private(set) var output: String = ""
-    @Published private(set) var busy = false
     @Published private(set) var configExists: Bool
 
-    let transfer = TransferService()
     let throwing = ThrowService()
     let queue = TransferQueue()
-
-    /// 松手后等待确认的投递；由 `ContentView` 的 sheet 展示。
-    @Published var pendingThrow: PendingThrow?
 
     init() {
         let loaded = TossConfig.load()
@@ -39,15 +33,22 @@ final class AppState: ObservableObject {
         config.targetDirectories(for: server)
     }
 
-    func effectiveTargetDir(for server: ServerConfig) -> String {
-        config.effectiveTargetDir(for: server)
-    }
-
     var localDeliveryDir: String { LocalDelivery.directory }
 
-    /// 松手后先记下待确认的投递，不直接开始传输。
-    /// 服务器来源必须是配置里真实存在的，防止伪造的拖拽数据；自己拖给自己直接忽略。
-    func beginThrow(payload: ThrowPayload, target: ThrowTarget) {
+    /// 这台机器可投递的文件夹：服务器读配置，本机就是本地收件目录。
+    func folders(for target: ThrowTarget) -> [String] {
+        switch target {
+        case .server(let server):
+            return targetDirectories(for: server)
+        case .local:
+            return [localDeliveryDir]
+        }
+    }
+
+    /// 拖进某个篮筐就投递到那个目录。
+    /// 服务器来源必须是配置里真实存在的，目标目录也必须是这台机器配置的文件夹，
+    /// 防止伪造的拖拽数据；自己拖给自己直接忽略。
+    func beginThrow(payload: ThrowPayload, target: ThrowTarget, targetDir: String) {
         guard !payload.entries.isEmpty, payload.source != target else { return }
 
         if case .server(let source) = payload.source {
@@ -56,29 +57,16 @@ final class AppState: ObservableObject {
             else { return }
         }
 
-        let directory: String
-        switch target {
-        case .server(let server):
-            directory = effectiveTargetDir(for: server)
-        case .local:
-            directory = LocalDelivery.directory
-        }
-
-        pendingThrow = PendingThrow(payload: payload, target: target, targetDir: directory)
-    }
-
-    func confirmThrow(_ pending: PendingThrow, targetDir: String) {
-        let trimmed = targetDir.trimmed
-        guard !trimmed.isEmpty else { return }
+        guard let directory = BasketChoice.directory(targetDir, among: folders(for: target))
+        else { return }
 
         queue.enqueue(TransferJob(
-            source: pending.payload.source,
-            sourceDir: pending.payload.sourceDir,
-            target: pending.target,
-            targetDir: trimmed,
-            entries: pending.payload.entries
+            source: payload.source,
+            sourceDir: payload.sourceDir,
+            target: target,
+            targetDir: directory,
+            entries: payload.entries
         ))
-        pendingThrow = nil
     }
 
     func setLocalDeliveryDir(_ value: String) throws {
@@ -112,9 +100,8 @@ final class AppState: ObservableObject {
         do {
             try config.save()
             configExists = true
-            output = t("✓ Config file created: {}", config.path.path)
         } catch {
-            output = t("✗ Could not create the config: {}", error.localizedDescription)
+            // 侧边栏提示会在下次刷新时重新评估，这里保持静默。
         }
     }
 
@@ -175,23 +162,6 @@ final class AppState: ObservableObject {
         } catch {
             config = previous
             throw error
-        }
-    }
-
-    func clearOutput() {
-        output = ""
-    }
-
-    func run(_ operation: @escaping () async throws -> String) {
-        guard !busy else { return }
-        busy = true
-        Task {
-            do {
-                output = try await operation()
-            } catch {
-                output = "✗ \(error.localizedDescription)"
-            }
-            busy = false
         }
     }
 }

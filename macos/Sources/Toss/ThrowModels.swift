@@ -66,6 +66,37 @@ enum ThrowTargets {
     }
 }
 
+/// 落到哪个篮筐 → 实际投递目录。只接受机器配置里的文件夹。
+enum BasketChoice {
+    static func directory(_ candidate: String, among folders: [String]) -> String? {
+        let trimmed = candidate.trimmed
+        guard !trimmed.isEmpty else { return nil }
+        return folders.first { $0.trimmed == trimmed }
+    }
+
+    /// 只有一个文件夹时整张卡片都能落；有多个时必须选中某一个篮筐。
+    static func directory(for basket: Int?, among folders: [String]) -> String? {
+        if folders.count == 1 { return folders.first }
+        guard let basket, folders.indices.contains(basket) else { return nil }
+        return folders[basket]
+    }
+}
+
+/// 拖拽落点（相对卡片顶部的 y）→ 第几个篮筐。
+enum DockBaskets {
+    static func index(
+        forY y: CGFloat,
+        basketTop: CGFloat,
+        rowStride: CGFloat,
+        count: Int
+    ) -> Int? {
+        guard count > 1, rowStride > 0 else { return nil }
+        let offset = y - basketTop
+        guard offset >= 0 else { return nil }
+        return min(max(Int(offset / rowStride), 0), count - 1)
+    }
+}
+
 /// 投递口横向翻页：一次最多移动一屏可见的数量，不会跳过没露过面的机器。
 enum DockPaging {
     static func step(index: Int, visible: Int, total: Int, forward: Bool) -> Int {
@@ -113,25 +144,6 @@ struct ThrowPayload: Identifiable, Codable {
 enum ThrowMode {
     case direct
     case archive
-
-    var label: String {
-        switch self {
-        case .direct:
-            return t("Single file, direct stream")
-        case .archive:
-            return t("Folders or multiple items, packed as tar.gz")
-        }
-    }
-}
-
-/// 松手后、确认前的那一步。放在 AppState 里，用 sheet 展示。
-struct PendingThrow: Identifiable {
-    var id = UUID()
-    var payload: ThrowPayload
-    var target: ThrowTarget
-    var targetDir: String
-
-    var mode: ThrowMode { payload.mode }
 }
 
 // MARK: - 队列
@@ -254,6 +266,21 @@ enum LocalDelivery {
 }
 
 // MARK: - 小工具
+
+struct TossError: LocalizedError {
+    let message: String
+    var errorDescription: String? { message }
+
+    init(_ message: String) {
+        self.message = message
+    }
+}
+
+extension String {
+    var trimmed: String {
+        trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}
 
 enum ByteCount {
     static func format(_ bytes: Int64) -> String {

@@ -1,148 +1,211 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// 选中一台机器 = 源：列出它收发目录里的条目，拖到下方投递口。
-struct ThrowSourcePanel: View {
+/// 一台机器配置的文件夹列表：折叠时只显示路径，点开才去取该目录的文件列表。
+struct FolderBrowserPanel: View {
     @ObservedObject var state: AppState
     let source: ThrowTarget
 
-    @State private var entries: [ThrowEntry] = []
-    @State private var selection = Set<String>()
-    @State private var isLoading = false
-    @State private var error: String?
-    @State private var chosenDir: String?
+    @State private var opened: Set<String> = []
+    @State private var folders: [String: FolderLoad] = [:]
+    @State private var selections: [String: Set<String>] = [:]
 
     private var directories: [String] {
-        switch source {
-        case .server(let server):
-            return state.targetDirectories(for: server)
-        case .local:
-            return [state.localDeliveryDir]
-        }
-    }
-
-    private var directory: String {
-        if let chosenDir, directories.contains(chosenDir) {
-            return chosenDir
-        }
-        return directories.first ?? ""
+        state.folders(for: source)
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
-                Image(systemName: "folder")
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
-
-                if directories.count > 1 {
-                    Menu {
-                        ForEach(directories, id: \.self) { dir in
-                            Button {
-                                chosenDir = dir
-                                Task { await load() }
-                            } label: {
-                                if dir == directory {
-                                    Label(dir, systemImage: "checkmark")
-                                } else {
-                                    Text(dir)
-                                }
-                            }
-                        }
-                    } label: {
-                        HStack(spacing: 4) {
-                            Text(directory)
-                                .lineLimit(1)
-                                .truncationMode(.middle)
-                            Image(systemName: "chevron.down")
-                                .font(.caption2)
-                        }
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                    }
-                    .menuStyle(.borderlessButton)
-                    .frame(maxWidth: 320, alignment: .leading)
-                    .help(t("Choose a folder"))
+        ScrollView {
+            LazyVStack(spacing: 10) {
+                if directories.isEmpty {
+                    emptyState
                 } else {
-                    Text(directory)
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                        .textSelection(.enabled)
+                    ForEach(directories, id: \.self) { directory in
+                        folderCard(directory)
+                    }
                 }
+            }
+            .padding(.vertical, 2)
+        }
+        .onChange(of: source.id) { _ in reset() }
+        .onChange(of: directories) { _ in reset() }
+    }
 
-                Spacer()
+    private var emptyState: some View {
+        VStack(spacing: 8) {
+            Image(systemName: "folder")
+                .font(.system(size: 28))
+                .symbolRenderingMode(.hierarchical)
+                .foregroundStyle(.tertiary)
+            Text(t("No folders configured"))
+                .font(.callout)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, minHeight: 160)
+    }
 
-                if !selection.isEmpty {
-                    Text(t("{} selected", selection.count))
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
+    private func folderCard(_ directory: String) -> some View {
+        let load = folders[directory] ?? FolderLoad()
+        let isOpen = opened.contains(directory)
+
+        return VStack(spacing: 0) {
+            HStack(spacing: 8) {
+                Button {
+                    toggle(directory)
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: isOpen ? "chevron.down" : "chevron.right")
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(.tertiary)
+                            .frame(width: 12)
+
+                        Image(systemName: isOpen ? "folder.fill" : "folder")
+                            .font(.callout)
+                            .foregroundStyle(isOpen ? Brand.green : Color.secondary)
+
+                        Text(directory)
+                            .font(.callout.weight(.medium))
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+
+                        Spacer(minLength: 8)
+
+                        if load.loading {
+                            ProgressView()
+                                .controlSize(.small)
+                        } else if isOpen {
+                            Text(t("{} items", load.entries?.count ?? 0))
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                                .monospacedDigit()
+                        } else {
+                            Text(t("Click to load"))
+                                .font(.caption2)
+                                .foregroundStyle(.tertiary)
+                        }
+                    }
+                    .contentShape(Rectangle())
                 }
-
-                if isLoading {
-                    ProgressView()
-                        .controlSize(.small)
-                }
+                .buttonStyle(.plain)
 
                 Button {
-                    Task { await load() }
+                    Task { await loadFolder(directory, force: true) }
                 } label: {
                     Image(systemName: "arrow.clockwise")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
                 .buttonStyle(.plain)
-                .disabled(isLoading)
+                .disabled(load.loading)
                 .help(t("Refresh"))
+                .accessibilityLabel(t("Refresh"))
             }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
 
-            if let error {
-                Label(error, systemImage: "exclamationmark.circle.fill")
+            if isOpen {
+                Divider()
+                    .opacity(0.5)
+                folderContent(directory, load: load)
+            }
+        }
+        .background(
+            RoundedRectangle(cornerRadius: Brand.radius, style: .continuous)
+                .fill(Color.primary.opacity(0.03))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: Brand.radius, style: .continuous)
+                .strokeBorder(Brand.hairline, lineWidth: 1)
+        )
+    }
+
+    @ViewBuilder
+    private func folderContent(_ directory: String, load: FolderLoad) -> some View {
+        if let error = load.error {
+            Label(error, systemImage: "exclamationmark.circle.fill")
+                .font(.caption)
+                .foregroundStyle(.red)
+                .lineLimit(2)
+                .textSelection(.enabled)
+                .padding(12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        } else if let entries = load.entries {
+            if entries.isEmpty {
+                Text(t("The folder is empty"))
                     .font(.caption)
-                    .foregroundStyle(.red)
-                    .textSelection(.enabled)
-            }
-
-            if entries.isEmpty && !isLoading && error == nil {
-                VStack(spacing: 8) {
-                    Image(systemName: "tray")
-                        .font(.system(size: 28))
-                        .symbolRenderingMode(.hierarchical)
-                        .foregroundStyle(.tertiary)
-                    Text(t("The folder is empty"))
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .foregroundStyle(.secondary)
+                    .padding(14)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             } else {
-                List(selection: $selection) {
-                    ForEach(entries) { entry in
-                        ThrowEntryRow(entry: entry)
-                            .tag(entry.name)
-                            .onDrag {
-                                provider(for: entry)
-                            }
+                VStack(spacing: 0) {
+                    ForEach(Array(entries.enumerated()), id: \.element.id) { index, entry in
+                        entryRow(directory, entry: entry)
+
+                        if index < entries.count - 1 {
+                            Divider()
+                                .opacity(0.4)
+                                .padding(.leading, 42)
+                        }
                     }
                 }
-                .listStyle(.inset)
+                .padding(.vertical, 3)
             }
-
-            Text(t("Drag an item onto a target below"))
-                .font(.caption2)
-                .foregroundStyle(.tertiary)
-                .padding(.leading, 2)
-        }
-        .task { await load() }
-        .onChange(of: source.id) { _ in
-            chosenDir = nil
-            Task { await load() }
+        } else {
+            Text(t("Click to load"))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .padding(14)
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
-    private func provider(for entry: ThrowEntry) -> NSItemProvider {
-        let chosen = selection.contains(entry.name)
-            ? entries.filter { selection.contains($0.name) }
+    private func entryRow(_ directory: String, entry: ThrowEntry) -> some View {
+        let selected = selections[directory]?.contains(entry.name) ?? false
+
+        return HStack(spacing: 8) {
+            Image(systemName: entry.isDirectory ? "folder" : "doc")
+                .font(.callout)
+                .foregroundStyle(entry.isDirectory ? Color.blue : Color.secondary)
+                .frame(width: 18, alignment: .leading)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(entry.name)
+                    .font(.callout)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Text(entry.sizeText)
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                    .monospacedDigit()
+            }
+
+            Spacer(minLength: 0)
+
+            if selected {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.caption)
+                    .foregroundStyle(Brand.green)
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .contentShape(Rectangle())
+        .background(selected ? Brand.green.opacity(0.10) : Color.clear)
+        .onTapGesture {
+            toggleSelection(directory, name: entry.name)
+        }
+        .onDrag {
+            provider(directory: directory, entry: entry)
+        }
+        .help(entry.name)
+    }
+
+    /// 拖拽数据里带上是哪个机器、哪个目录，以及选中的条目。
+    private func provider(directory: String, entry: ThrowEntry) -> NSItemProvider {
+        let entries = folders[directory]?.entries ?? []
+        let selected = selections[directory] ?? []
+        let chosen = selected.contains(entry.name)
+            ? entries.filter { selected.contains($0.name) }
             : [entry]
 
         let payload = ThrowPayload(
@@ -155,49 +218,60 @@ struct ThrowSourcePanel: View {
         return NSItemProvider(item: data as NSData, typeIdentifier: UTType.json.identifier)
     }
 
-    @MainActor
-    private func load() async {
-        let targetDir = directory
-        isLoading = true
-        error = nil
-
-        do {
-            let loaded = try await state.throwing.browse(source: source, directory: targetDir)
-            guard targetDir == directory else { return }
-            entries = loaded
-            selection = selection.filter { name in loaded.contains { $0.name == name } }
-        } catch {
-            guard targetDir == directory else { return }
-            entries = []
-            self.error = error.localizedDescription
+    private func toggle(_ directory: String) {
+        if opened.contains(directory) {
+            opened.remove(directory)
+            return
         }
 
-        isLoading = false
+        opened.insert(directory)
+        if folders[directory]?.entries == nil {
+            Task { await loadFolder(directory) }
+        }
+    }
+
+    private func toggleSelection(_ directory: String, name: String) {
+        var selected = selections[directory] ?? []
+        if selected.contains(name) {
+            selected.remove(name)
+        } else {
+            selected.insert(name)
+        }
+        selections[directory] = selected
+    }
+
+    private func reset() {
+        opened = []
+        folders = [:]
+        selections = [:]
+    }
+
+    @MainActor
+    private func loadFolder(_ directory: String, force: Bool = false) async {
+        if !force, folders[directory]?.entries != nil { return }
+
+        var load = folders[directory] ?? FolderLoad()
+        load.loading = true
+        load.error = nil
+        folders[directory] = load
+
+        do {
+            let entries = try await state.throwing.browse(source: source, directory: directory)
+            guard directories.contains(directory) else { return }
+            folders[directory] = FolderLoad(entries: entries, loading: false)
+
+            let valid = Set(entries.map(\.name))
+            selections[directory] = (selections[directory] ?? []).intersection(valid)
+        } catch {
+            guard directories.contains(directory) else { return }
+            folders[directory] = FolderLoad(error: error.localizedDescription)
+        }
     }
 }
 
-private struct ThrowEntryRow: View {
-    let entry: ThrowEntry
-
-    var body: some View {
-        HStack(spacing: 9) {
-            Image(systemName: entry.isDirectory ? "folder.fill" : "doc")
-                .font(.callout)
-                .foregroundStyle(entry.isDirectory ? Color.blue : Color.secondary)
-                .frame(width: 18, alignment: .leading)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(entry.name)
-                    .font(.callout)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                Text(entry.sizeText)
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
-            }
-            Spacer(minLength: 0)
-        }
-        .padding(.vertical, 3)
-        .contentShape(Rectangle())
-        .help(entry.name)
-    }
+/// 单个文件夹的加载状态：没加载过时 `entries` 为 nil。
+struct FolderLoad {
+    var entries: [ThrowEntry]?
+    var loading = false
+    var error: String?
 }

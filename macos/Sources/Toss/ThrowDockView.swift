@@ -19,6 +19,7 @@ struct ThrowDockView: View {
     let source: ThrowTarget
 
     @State private var scrollIndex = 0
+    @State private var tallestCard: CGFloat = 132
 
     private var targets: [ThrowTarget] {
         ThrowTargets.destinations(servers: state.servers, source: source)
@@ -47,7 +48,8 @@ struct ThrowDockView: View {
                                     ThrowTargetCard(
                                         state: state,
                                         target: target,
-                                        width: layout.cardWidth
+                                        width: layout.cardWidth,
+                                        folders: state.folders(for: target)
                                     )
                                     .id(target.id)
                                 }
@@ -76,8 +78,13 @@ struct ThrowDockView: View {
                 }
             }
         }
-        .frame(height: 184)
+        // 拖到有多目录的机器时会展开文件夹篮筐，投递口整体跟着长高。
+        .frame(height: max(184, tallestCard + 44))
         .background(.regularMaterial)
+        .onPreferenceChange(CardHeightKey.self) { height in
+            tallestCard = height
+        }
+        .animation(.easeInOut(duration: 0.22), value: tallestCard)
     }
 
     private var title: String {
@@ -232,26 +239,119 @@ private struct ThrowTargetCard: View {
     @ObservedObject var state: AppState
     let target: ThrowTarget
     let width: CGFloat
+    let folders: [String]
 
     @State private var isTargeted = false
+    @State private var hoveredBasket: Int?
+
+    private let faceHeight: CGFloat = 52
+    private let basketRowHeight: CGFloat = 30
+    private let basketGap: CGFloat = 4
+    private let topPadding: CGFloat = 22
+
+    private var showsBaskets: Bool { isTargeted && folders.count > 1 }
 
     var body: some View {
         ZStack(alignment: .top) {
-            backingCard(scale: 0.93, offset: -16, opacity: 0.35)
-            backingCard(scale: 0.965, offset: -8, opacity: 0.60)
-            frontCard
+            if !showsBaskets {
+                backingCard(scale: 0.93, offset: -16, opacity: 0.35)
+                backingCard(scale: 0.965, offset: -8, opacity: 0.60)
+            }
+
+            VStack(spacing: 6) {
+                if showsBaskets {
+                    compactFace
+                    basketList
+                } else {
+                    frontCard
+                }
+            }
         }
-        .padding(.top, 22)
+        .padding(.top, topPadding)
         .padding(.horizontal, 8)
         .padding(.bottom, 6)
-        // 整块（含后面两张卡与内边距）都是热区；24pt 缓冲避免拖不进去。
+        .frame(width: width + 16)
+        // 整块（含后面两张卡、展开的篮筐与内边距）都是热区。
         .contentShape(Rectangle())
-        .onDrop(of: [UTType.json], isTargeted: $isTargeted) { providers in
-            handleDrop(providers)
-        }
+        .onDrop(
+            of: [UTType.json],
+            delegate: BasketDropDelegate(
+                isTargeted: $isTargeted,
+                hovered: $hoveredBasket,
+                folderCount: folders.count,
+                basketTop: topPadding + faceHeight + 6,
+                rowStride: basketRowHeight + basketGap,
+                onDrop: handleDrop
+            )
+        )
         .animation(.spring(response: 0.26, dampingFraction: 0.82), value: isTargeted)
+        .background(heightReader)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(t("Throw to {}", target.displayName))
+    }
+
+    private var heightReader: some View {
+        GeometryReader { proxy in
+            Color.clear.preference(key: CardHeightKey.self, value: proxy.size.height)
+        }
+    }
+
+    /// 悬停时机器卡片收成一条标题，下面腾出位置放文件夹篮筐。
+    private var compactFace: some View {
+        HStack(spacing: 8) {
+            Image(systemName: target.isLocal ? "laptopcomputer" : "server.rack")
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(Brand.green)
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text(target.displayName)
+                    .font(.caption.weight(.semibold))
+                    .lineLimit(1)
+                Text(t("Pick a folder below"))
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 10)
+        .frame(width: width, height: faceHeight)
+        .background(
+            RoundedRectangle(cornerRadius: Brand.radius, style: .continuous)
+                .fill(Brand.green.opacity(0.08))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: Brand.radius, style: .continuous)
+                .strokeBorder(Brand.green, lineWidth: 1.5)
+        )
+        .shadow(color: .black.opacity(0.10), radius: 8, y: 4)
+    }
+
+    /// 一台机器配置了几个文件夹，就摆几个篮筐。
+    private var basketList: some View {
+        VStack(spacing: basketGap) {
+            ForEach(Array(folders.enumerated()), id: \.offset) { index, directory in
+                HStack(spacing: 6) {
+                    Image(systemName: hoveredBasket == index ? "tray.full.fill" : "tray")
+                        .font(.caption2)
+                    Text(directory)
+                        .font(.caption)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Spacer(minLength: 0)
+                }
+                .foregroundStyle(hoveredBasket == index ? Brand.green : Color.secondary)
+                .padding(.horizontal, 9)
+                .frame(width: width, height: basketRowHeight)
+                .background(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(hoveredBasket == index
+                              ? Brand.green.opacity(0.14)
+                              : Color.primary.opacity(0.05))
+                )
+            }
+        }
     }
 
     private var frontCard: some View {
@@ -312,12 +412,13 @@ private struct ThrowTargetCard: View {
             .opacity(opacity)
     }
 
-    private func handleDrop(_ providers: [NSItemProvider]) -> Bool {
-        guard let provider = providers.first(where: {
-            $0.hasItemConformingToTypeIdentifier(UTType.json.identifier)
-        }) else {
-            return false
-        }
+    /// 单目录直接落进去；多目录必须落在某个篮筐上。
+    private func handleDrop(_ providers: [NSItemProvider], basket: Int?) -> Bool {
+        guard let directory = BasketChoice.directory(for: basket, among: folders),
+              let provider = providers.first(where: {
+                  $0.hasItemConformingToTypeIdentifier(UTType.json.identifier)
+              })
+        else { return false }
 
         provider.loadItem(forTypeIdentifier: UTType.json.identifier, options: nil) { item, _ in
             let data: Data?
@@ -334,9 +435,63 @@ private struct ThrowTargetCard: View {
             else { return }
 
             DispatchQueue.main.async {
-                state.beginThrow(payload: payload, target: target)
+                state.beginThrow(payload: payload, target: target, targetDir: directory)
             }
         }
         return true
+    }
+}
+
+/// 整张展开卡片是一个投放目标；落点纵向落在第几个篮筐，就投到第几个文件夹。
+private struct BasketDropDelegate: DropDelegate {
+    @Binding var isTargeted: Bool
+    @Binding var hovered: Int?
+    let folderCount: Int
+    let basketTop: CGFloat
+    let rowStride: CGFloat
+    let onDrop: ([NSItemProvider], Int?) -> Bool
+
+    func validateDrop(info: DropInfo) -> Bool {
+        info.hasItemsConforming(to: [UTType.json])
+    }
+
+    func dropEntered(info: DropInfo) {
+        isTargeted = true
+        updateHover(info)
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        updateHover(info)
+        return DropProposal(operation: .copy)
+    }
+
+    func dropExited(info: DropInfo) {
+        isTargeted = false
+        hovered = nil
+    }
+
+    func performDrop(info: DropInfo) -> Bool {
+        updateHover(info)
+        let result = onDrop(info.itemProviders(for: [UTType.json]), hovered)
+        isTargeted = false
+        hovered = nil
+        return result
+    }
+
+    private func updateHover(_ info: DropInfo) {
+        hovered = DockBaskets.index(
+            forY: info.location.y,
+            basketTop: basketTop,
+            rowStride: rowStride,
+            count: folderCount
+        )
+    }
+}
+
+private struct CardHeightKey: PreferenceKey {
+    static let defaultValue: CGFloat = 132
+
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
     }
 }

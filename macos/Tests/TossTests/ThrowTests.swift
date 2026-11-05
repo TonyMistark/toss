@@ -132,6 +132,38 @@ struct ThrowDestinationsTests {
     }
 }
 
+// MARK: - 篮筐选择
+
+@Suite("文件夹篮筐")
+struct BasketChoiceTests {
+    @Test("只接受这台机器配置的文件夹，前后空格会被忽略")
+    func picksOnlyConfiguredFolders() {
+        let folders = ["~/.toss", "/data/inbox"]
+        #expect(BasketChoice.directory(" /data/inbox ", among: folders) == "/data/inbox")
+        #expect(BasketChoice.directory("~/.toss", among: folders) == "~/.toss")
+        #expect(BasketChoice.directory("/tmp", among: folders) == nil)
+        #expect(BasketChoice.directory("", among: folders) == nil)
+        #expect(BasketChoice.directory("   ", among: folders) == nil)
+    }
+
+    @Test("单目录任意落点都用它，多目录必须给出有效篮筐")
+    func resolvesBasket() {
+        #expect(BasketChoice.directory(for: nil, among: ["~/.toss"]) == "~/.toss")
+        #expect(BasketChoice.directory(for: 1, among: ["a", "b"]) == "b")
+        #expect(BasketChoice.directory(for: nil, among: ["a", "b"]) == nil)
+        #expect(BasketChoice.directory(for: 5, among: ["a", "b"]) == nil)
+    }
+
+    @Test("拖拽落点换算到篮筐序号，卡片顶部与越界不误选")
+    func mapsDropPositionToBasket() {
+        #expect(DockBaskets.index(forY: 79, basketTop: 80, rowStride: 34, count: 3) == nil)
+        #expect(DockBaskets.index(forY: 80, basketTop: 80, rowStride: 34, count: 3) == 0)
+        #expect(DockBaskets.index(forY: 114, basketTop: 80, rowStride: 34, count: 3) == 1)
+        #expect(DockBaskets.index(forY: 200, basketTop: 80, rowStride: 34, count: 3) == 2)
+        #expect(DockBaskets.index(forY: 90, basketTop: 80, rowStride: 34, count: 1) == nil)
+    }
+}
+
 // MARK: - 投递口翻页
 
 @Suite("投递口翻页")
