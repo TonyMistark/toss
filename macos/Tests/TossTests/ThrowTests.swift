@@ -39,6 +39,63 @@ struct LocalDeliveryTests {
     }
 }
 
+// MARK: - 多目录配置
+
+@Suite("每台机器的多个目录")
+struct TargetDirectoriesTests {
+    @Test("旧配置的 target_dir 会迁移成目录列表")
+    func migratesLegacyTargetDir() throws {
+        let root = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("toss-config-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let url = root.appendingPathComponent("config.json")
+        let json: [String: Any] = [
+            "file_transfer": [
+                "target_dir": "~/.toss",
+                "servers": [
+                    "nas": ["host": "nas.local", "target_dir": "/data/inbox"]
+                ]
+            ]
+        ]
+        try JSONSerialization.data(withJSONObject: json).write(to: url)
+
+        let config = TossConfig.load(from: url)
+        let nas = config.servers.first { $0.name == "nas" }
+        #expect(nas?.targetDirs == ["/data/inbox"])
+        #expect(nas.map { config.targetDirectories(for: $0) } ?? [] == ["/data/inbox"])
+    }
+
+    @Test("多个目录能保存并读回，未配置的服务器回落到全局目录")
+    func roundTripsMultipleFolders() throws {
+        let root = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("toss-config-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let url = root.appendingPathComponent("config.json")
+        let server = ServerConfig(
+            name: "nas",
+            host: "nas.local",
+            targetDirs: ["/data/inbox", "/data/archive"]
+        )
+        let config = TossConfig(
+            path: url,
+            globalTargetDir: "~/.toss",
+            servers: [server]
+        )
+        try config.save()
+
+        let loaded = TossConfig.load(from: url)
+        #expect(loaded.servers.first?.targetDirs == ["/data/inbox", "/data/archive"])
+
+        let plain = ServerConfig(name: "plain", host: "plain.local")
+        #expect(loaded.targetDirectories(for: plain) == ["~/.toss"])
+        #expect(loaded.effectiveTargetDir(for: plain) == "~/.toss")
+    }
+}
+
 // MARK: - 传输方式
 
 @Suite("投递计划")

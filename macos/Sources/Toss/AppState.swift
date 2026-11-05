@@ -37,6 +37,10 @@ final class AppState: ObservableObject {
 
     var configPath: URL { config.path }
 
+    func targetDirectories(for server: ServerConfig) -> [String] {
+        config.targetDirectories(for: server)
+    }
+
     func effectiveTargetDir(for server: ServerConfig) -> String {
         config.effectiveTargetDir(for: server)
     }

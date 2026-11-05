@@ -80,11 +80,18 @@ struct ServerDetailView: View {
 
                 HStack(spacing: 4) {
                     Image(systemName: "folder")
-                    Text(state.effectiveTargetDir(for: server))
+                    Text(state.targetDirectories(for: server).first ?? state.effectiveTargetDir(for: server))
+                        .textSelection(.enabled)
+                    if state.targetDirectories(for: server).count > 1 {
+                        Text("+\(state.targetDirectories(for: server).count - 1)")
+                            .font(.caption2)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 1)
+                            .background(Color.primary.opacity(0.06), in: Capsule())
+                    }
                 }
                 .font(.caption)
                 .foregroundStyle(.secondary)
-                .textSelection(.enabled)
             }
 
             Spacer()

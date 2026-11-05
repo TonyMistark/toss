@@ -10,9 +10,17 @@ struct ThrowSourcePanel: View {
     @State private var selection = Set<String>()
     @State private var isLoading = false
     @State private var error: String?
+    @State private var chosenDir: String?
+
+    private var directories: [String] {
+        state.targetDirectories(for: server)
+    }
 
     private var directory: String {
-        state.effectiveTargetDir(for: server)
+        if let chosenDir, directories.contains(chosenDir) {
+            return chosenDir
+        }
+        return directories.first ?? state.effectiveTargetDir(for: server)
     }
 
     var body: some View {
@@ -21,12 +29,43 @@ struct ThrowSourcePanel: View {
                 Image(systemName: "folder")
                     .font(.caption)
                     .foregroundStyle(.tertiary)
-                Text(directory)
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                    .textSelection(.enabled)
+
+                if directories.count > 1 {
+                    Menu {
+                        ForEach(directories, id: \.self) { dir in
+                            Button {
+                                chosenDir = dir
+                                Task { await load() }
+                            } label: {
+                                if dir == directory {
+                                    Label(dir, systemImage: "checkmark")
+                                } else {
+                                    Text(dir)
+                                }
+                            }
+                        }
+                    } label: {
+                        HStack(spacing: 4) {
+                            Text(directory)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                            Image(systemName: "chevron.down")
+                                .font(.caption2)
+                        }
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                    }
+                    .menuStyle(.borderlessButton)
+                    .frame(maxWidth: 320, alignment: .leading)
+                    .help(t("Choose a folder"))
+                } else {
+                    Text(directory)
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .textSelection(.enabled)
+                }
 
                 Spacer()
 
@@ -90,6 +129,10 @@ struct ThrowSourcePanel: View {
                 .padding(.leading, 2)
         }
         .task { await load() }
+        .onChange(of: server.name) { _ in
+            chosenDir = nil
+            Task { await load() }
+        }
     }
 
     private func provider(for entry: ThrowEntry) -> NSItemProvider {
@@ -109,15 +152,17 @@ struct ThrowSourcePanel: View {
 
     @MainActor
     private func load() async {
-        guard !isLoading else { return }
+        let targetDir = directory
         isLoading = true
         error = nil
 
         do {
-            let loaded = try await state.throwing.browse(server: server, directory: directory)
+            let loaded = try await state.throwing.browse(server: server, directory: targetDir)
+            guard targetDir == directory else { return }
             entries = loaded
             selection = selection.filter { name in loaded.contains { $0.name == name } }
         } catch {
+            guard targetDir == directory else { return }
             entries = []
             self.error = error.localizedDescription
         }
