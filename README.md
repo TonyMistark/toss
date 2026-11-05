@@ -150,6 +150,8 @@ App 内置更新器会同时查 GitHub 与 Gitee（`TonyMistark/toss` / `Micesta
 
 不设置服务器级 `target_dir` 时自动继承全局值。示例中 `prod` 使用全局的 `~/.toss`，`nas` 使用独立的 `~/custom_path`。
 
+macOS 应用还支持服务器级的 `target_dirs` 数组，用于给一台机器配置多个收发目录；命令行工具读取时会使用数组中的第一个目录。
+
 ## 使用方式
 
 ### CLI 模式

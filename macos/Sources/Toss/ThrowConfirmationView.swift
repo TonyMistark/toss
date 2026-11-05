@@ -14,6 +14,11 @@ struct ThrowConfirmationView: View {
         _targetDir = State(initialValue: pending.targetDir)
     }
 
+    private var configuredDirs: [String] {
+        guard case .server(let server) = pending.target else { return [] }
+        return state.targetDirectories(for: server)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             header
@@ -65,6 +70,31 @@ struct ThrowConfirmationView: View {
                         .textFieldStyle(.roundedBorder)
                         .labelsHidden()
                         .accessibilityLabel(pending.target.isLocal ? t("Local folder") : t("Remote folder"))
+
+                    if configuredDirs.count > 1 {
+                        Menu {
+                            ForEach(configuredDirs, id: \.self) { dir in
+                                Button {
+                                    targetDir = dir
+                                    error = nil
+                                } label: {
+                                    if dir == targetDir.trimmed {
+                                        Label(dir, systemImage: "checkmark")
+                                    } else {
+                                        Text(dir)
+                                    }
+                                }
+                            }
+                        } label: {
+                            Image(systemName: "chevron.down")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        .menuStyle(.borderlessButton)
+                        .fixedSize()
+                        .help(t("Choose a folder"))
+                    }
+
                     if pending.target.isLocal {
                         Button {
                             chooseLocalFolder()

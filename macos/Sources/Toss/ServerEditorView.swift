@@ -10,7 +10,7 @@ struct ServerEditorView: View {
     @State private var host = ""
     @State private var user = ""
     @State private var port = "22"
-    @State private var targetDir = ""
+    @State private var targetDirs: [String] = [""]
     @State private var errorMessage: String?
     @State private var confirmDelete = false
 
@@ -54,18 +54,15 @@ struct ServerEditorView: View {
                     TextField("22", text: $port)
                 }
                 GridRow {
-                    Text(t("Transfer folder"))
+                    Text(t("Folders"))
                         .foregroundStyle(.secondary)
                         .frame(width: 72, alignment: .trailing)
-                    TextField(
-                        t("Leave empty to inherit the global folder: {}", state.config.globalTargetDir),
-                        text: $targetDir
-                    )
+                    folderRows
                 }
             }
             .textFieldStyle(.roundedBorder)
 
-            Text(t("Leave the folder empty to inherit the global setting. Remote paths may start with ~/."))
+            Text(t("Add the folders you drop into. The first one is the default. Leave the list empty to inherit the global folder: {}", state.config.globalTargetDir))
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
@@ -96,7 +93,7 @@ struct ServerEditorView: View {
             }
         }
         .padding(20)
-        .frame(width: 500, height: 400)
+        .frame(width: 500, height: 460)
         .onAppear {
             populate()
         }
@@ -116,14 +113,52 @@ struct ServerEditorView: View {
         host = server.host
         user = server.user
         port = "\(server.port)"
-        targetDir = server.targetDir ?? ""
+        targetDirs = server.targetDirs.isEmpty ? [""] : server.targetDirs
+    }
+
+    private var folderRows: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            ScrollView {
+                VStack(spacing: 6) {
+                    ForEach(targetDirs.indices, id: \.self) { index in
+                        HStack(spacing: 6) {
+                            TextField(
+                                t("e.g. ~/.toss or /data/inbox"),
+                                text: $targetDirs[index]
+                            )
+                            Button {
+                                targetDirs.remove(at: index)
+                            } label: {
+                                Image(systemName: "minus.circle.fill")
+                                    .foregroundStyle(.secondary)
+                            }
+                            .buttonStyle(.plain)
+                            .help(t("Remove Folder"))
+                        }
+                    }
+                }
+            }
+            .frame(maxHeight: 112)
+
+            Button {
+                targetDirs.append("")
+            } label: {
+                Label(t("Add Folder"), systemImage: "plus")
+                    .font(.caption)
+            }
+            .buttonStyle(.borderless)
+        }
     }
 
     private func save() {
         let newName = name.trimmed
         let newHost = host.trimmed
         let newUser = user.trimmed
-        let newDir = targetDir.trimmed
+        var seen = Set<String>()
+        let dirs = targetDirs
+            .map(\.trimmed)
+            .filter { !$0.isEmpty }
+            .filter { seen.insert($0).inserted }
 
         guard !newName.isEmpty else {
             errorMessage = t("Name cannot be empty")
@@ -143,7 +178,7 @@ struct ServerEditorView: View {
             host: newHost,
             user: newUser,
             port: portValue,
-            targetDir: newDir.isEmpty ? nil : newDir
+            targetDirs: dirs
         )
 
         do {
