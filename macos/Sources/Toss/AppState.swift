@@ -21,6 +21,11 @@ final class AppState: ObservableObject {
         self.config = loaded
         self.selectedServerName = loaded.servers.first?.name
         self.configExists = FileManager.default.fileExists(atPath: loaded.path.path)
+
+        try? FileManager.default.createDirectory(
+            at: URL(fileURLWithPath: LocalDelivery.directory),
+            withIntermediateDirectories: true
+        )
     }
 
     var servers: [ServerConfig] { config.servers }

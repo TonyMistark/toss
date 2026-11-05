@@ -29,6 +29,16 @@ struct FileNamingTests {
     }
 }
 
+// MARK: - 默认目录
+
+@Suite("默认投递目录")
+struct LocalDeliveryTests {
+    @Test("未配置时默认使用 ~/.toss")
+    func defaultsToTossFolder() {
+        #expect(LocalDelivery.defaultDirectory.hasSuffix("/.toss"))
+    }
+}
+
 // MARK: - 传输方式
 
 @Suite("投递计划")
@@ -72,6 +82,12 @@ struct ThrowCommandTests {
         #expect(ThrowCommand.remoteQuote("~/.toss") == "\"$HOME\"/'.toss'")
         #expect(ThrowCommand.remoteQuote("~/a b") == "\"$HOME\"/'a b'")
         #expect(ThrowCommand.remoteQuote("/tmp/a b") == "'/tmp/a b'")
+    }
+
+    @Test("浏览前先建默认目录，~ 用 $HOME 展开")
+    func ensureDirectoryCreatesDefaultFolder() {
+        #expect(ThrowCommand.ensureDirectory("~/.toss") == "mkdir -p \"$HOME\"/'.toss'")
+        #expect(ThrowCommand.ensureDirectory("/srv/data") == "mkdir -p '/srv/data'")
     }
 
     @Test("源端文件带 ./ 前缀，-rf 之类的名字不会被当成选项")
