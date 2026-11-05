@@ -137,28 +137,22 @@ struct ContentView: View {
             }
         }
         .frame(minWidth: 600)
-        .sheet(item: $state.pendingThrow) { pending in
-            ThrowConfirmationView(state: state, pending: pending)
-        }
     }
 }
 
-/// 选中本机：把 ~/.toss 里的东西拖到服务器上，就是上传。
+/// 选中本机：只列出它的收件文件夹，点开才加载文件。
 struct LocalDetailView: View {
     @ObservedObject var state: AppState
 
     var body: some View {
         VStack(spacing: 0) {
             HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 6) {
+                VStack(alignment: .leading, spacing: 5) {
                     Text(t("This Mac"))
                         .font(.title2.weight(.semibold))
-                    Text(state.localDeliveryDir)
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                        .textSelection(.enabled)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
+                    Text(t("{} folders", state.folders(for: .local).count))
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
                 }
 
                 Spacer()
@@ -166,10 +160,10 @@ struct LocalDetailView: View {
             .padding(20)
 
             Divider()
-                .padding(.bottom, 8)
 
-            ThrowSourcePanel(state: state, source: .local)
+            FolderBrowserPanel(state: state, source: .local)
                 .padding(.horizontal, 20)
+                .padding(.top, 10)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
     }
