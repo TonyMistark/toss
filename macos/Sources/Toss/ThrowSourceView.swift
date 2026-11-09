@@ -4,6 +4,7 @@ import UniformTypeIdentifiers
 /// 一台机器配置的文件夹列表：折叠时只显示路径，点开才去取该目录的文件列表。
 struct FolderBrowserPanel: View {
     @ObservedObject var state: AppState
+    @ObservedObject var drag: DragSession
     let source: ThrowTarget
 
     @State private var opened: Set<String> = []
@@ -161,6 +162,10 @@ struct FolderBrowserPanel: View {
 
     private func entryRow(_ directory: String, entry: ThrowEntry) -> some View {
         let selected = selections[directory]?.contains(entry.name) ?? false
+        // 正在被拖出去的就是这一行：给它套上蓝框，和机器栏里被瞄准的文件夹呼应。
+        let isDragSource = drag.isDragging
+            && drag.projectile == entry.name
+            && drag.draggingDir == directory
 
         return HStack(spacing: 8) {
             Image(systemName: entry.isDirectory ? "folder" : "doc")
@@ -190,31 +195,47 @@ struct FolderBrowserPanel: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
         .contentShape(Rectangle())
-        .background(selected ? Brand.green.opacity(0.10) : Color.clear)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(isDragSource
+                      ? Brand.source.opacity(0.12)
+                      : (selected ? Brand.green.opacity(0.10) : Color.clear))
+        )
+        .overlay(
+            DragSourceFrame(active: isDragSource)
+                .allowsHitTesting(false)
+        )
         .onTapGesture {
             toggleSelection(directory, name: entry.name)
         }
         .onDrag {
-            provider(directory: directory, entry: entry)
+            let payload = payload(directory: directory, entry: entry)
+            drag.begin(name: entry.name, payload: payload)
+            return provider(for: payload, directory: directory)
         }
         .help(entry.name)
     }
 
     /// 拖拽数据里带上是哪个机器、哪个目录，以及选中的条目。
-    private func provider(directory: String, entry: ThrowEntry) -> NSItemProvider {
+    private func payload(directory: String, entry: ThrowEntry) -> ThrowPayload {
         let entries = folders[directory]?.entries ?? []
         let selected = selections[directory] ?? []
         let chosen = selected.contains(entry.name)
             ? entries.filter { selected.contains($0.name) }
             : [entry]
 
-        let payload = ThrowPayload(
+        return ThrowPayload(
             source: source,
             sourceDir: directory,
             entries: chosen
         )
+    }
 
+    private func provider(for payload: ThrowPayload, directory: String) -> NSItemProvider {
         let data = (try? JSONEncoder().encode(payload)) ?? Data()
+        OperationLog.info(t("Dragging {} from {}",
+                            LogFormat.entries(payload.entries),
+                            LogFormat.location(source, directory: directory)))
         return NSItemProvider(item: data as NSData, typeIdentifier: UTType.json.identifier)
     }
 
@@ -278,4 +299,35 @@ struct FolderLoad {
     var entries: [ThrowEntry]?
     var loading = false
     var error: String?
+}
+
+/// 被拖动的源文件行上的蓝色描边框：弹入后轻轻呼吸，和机器栏的目标篮筐保持一致。
+private struct DragSourceFrame: View {
+    let active: Bool
+
+    @State private var breathing = false
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: 8, style: .continuous)
+            .strokeBorder(Brand.source.opacity(active ? 1 : 0),
+                          lineWidth: active ? 2 : 0)
+            .shadow(color: Brand.source.opacity(active ? (breathing ? 0.34 : 0.16) : 0),
+                    radius: active ? (breathing ? 7 : 4) : 0)
+            .animation(.spring(response: 0.26, dampingFraction: 0.74), value: active)
+            .onChange(of: active) { next in
+                breathing = false
+                guard next else { return }
+                breathe()
+            }
+            .onAppear {
+                guard active else { return }
+                breathe()
+            }
+    }
+
+    private func breathe() {
+        withAnimation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true)) {
+            breathing = true
+        }
+    }
 }

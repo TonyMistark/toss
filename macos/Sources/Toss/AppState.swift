@@ -14,7 +14,8 @@ final class AppState: ObservableObject {
     init() {
         let loaded = TossConfig.load()
         self.config = loaded
-        self.selectedTarget = loaded.servers.first.map { .server($0) } ?? .local
+        // 默认选中机器栏最左边的「本机」，打开就能直接往外发。
+        self.selectedTarget = .local
         self.configExists = FileManager.default.fileExists(atPath: loaded.path.path)
 
         try? FileManager.default.createDirectory(

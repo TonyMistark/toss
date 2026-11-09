@@ -3,6 +3,7 @@ import SwiftUI
 /// 选中一台机器：只列出它配置的几个收发文件夹，点开哪个才加载哪个的文件。
 struct ServerDetailView: View {
     @ObservedObject var state: AppState
+    @ObservedObject var drag: DragSession
     let server: ServerConfig
     let onEdit: () -> Void
 
@@ -15,7 +16,7 @@ struct ServerDetailView: View {
             header
             Divider()
 
-            FolderBrowserPanel(state: state, source: .server(server))
+            FolderBrowserPanel(state: state, drag: drag, source: .server(server))
                 .padding(.horizontal, 20)
                 .padding(.top, 10)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)

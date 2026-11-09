@@ -66,6 +66,13 @@ struct ServerEditorView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
+            HStack(alignment: .firstTextBaseline, spacing: 5) {
+                Image(systemName: "exclamationmark.triangle")
+                Text(t("Folders must already exist on the server. Toss never creates or deletes anything there."))
+            }
+            .font(.caption)
+            .foregroundStyle(.orange)
+
             if let errorMessage {
                 Text(errorMessage)
                     .font(.caption)

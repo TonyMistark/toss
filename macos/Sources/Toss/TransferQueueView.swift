@@ -30,7 +30,8 @@ struct TransferQueueView: View {
                 } else {
                     ScrollView {
                         VStack(spacing: 0) {
-                            ForEach(queue.jobs) { job in
+                            // 倒序：最新发起的传输排在最上面，一眼就能看到。
+                            ForEach(queue.jobs.reversed()) { job in
                                 TransferJobRow(queue: queue, job: job)
                             }
                         }

@@ -26,8 +26,9 @@ struct ThrowService {
             throw TossError(t("Transfer folder cannot be empty"))
         }
 
-        let script = "\(ThrowCommand.ensureDirectory(dir)) && \(ThrowCommand.list(directory: dir))"
-        let result = try await runSSH(server, script)
+        try await requireExistingDirectory(server, dir)
+
+        let result = try await runSSH(server, ThrowCommand.list(directory: dir))
         guard result.code == 0 else {
             throw TossError(
                 t("Listing failed: {}\nHint: check the server address and SSH key (ssh {})",
@@ -118,83 +119,61 @@ struct ThrowService {
             throw TossError(t("No files selected to send"))
         }
 
-        let tempDir = ThrowCommand.join(targetDir, ".toss-incoming-\(UUID().uuidString)")
+        try await requireExistingDirectory(destination, targetDir)
+        let plan = try await placement(for: job, on: destination, in: targetDir)
+        let finalName = self.finalName(plan, entries: job.entries)
 
-        let prepare = try await runSSH(
-            destination,
-            "mkdir -p \(ThrowCommand.remoteQuote(targetDir)) \(ThrowCommand.remoteQuote(tempDir))"
+        report(.transferring, nil, 0)
+
+        let sourceCommand = ThrowCommand.source(
+            directory: job.sourceDir,
+            entries: job.entries,
+            mode: job.mode,
+            verbose: job.mode == .archive
         )
-        try requireSuccess(
-            prepare,
+        let destinationCommand = ThrowCommand.destination(
+            root: targetDir,
+            name: finalName,
+            mode: job.mode
+        )
+
+        let streamed = try await stream(
+            source: .remote(source),
+            sourceCommand: sourceCommand,
+            destination: destination,
+            destinationCommand: destinationCommand,
+            localFile: nil,
+            progressPlan: await remoteProgressPlan(for: job, on: source),
             cancellation: cancellation,
-            message: t("Could not prepare the destination: {}", prepare.stderr.trimmed)
+            report: report
         )
-        OperationLog.success(t("Prepared {} on {}", targetDir, destination.name))
 
-        do {
-            report(.transferring, nil, 0)
+        if cancellation.isCancelled { throw ThrowCancelled() }
+        try checkStream(streamed, cancellation: cancellation)
 
-            let sourceCommand = ThrowCommand.source(
-                directory: job.sourceDir,
-                entries: job.entries,
-                mode: job.mode
-            )
-            let destinationCommand = ThrowCommand.destination(
-                root: tempDir,
-                entries: job.entries,
-                mode: job.mode
-            )
-
-            let streamed = try await stream(
-                source: .remote(source),
-                sourceCommand: sourceCommand,
-                destination: destination,
-                destinationCommand: destinationCommand,
-                localFile: nil,
-                expectedBytes: job.totalBytes,
-                showProgress: job.mode == .direct,
-                cancellation: cancellation,
-                report: report
-            )
-
-            if cancellation.isCancelled { throw ThrowCancelled() }
-            try checkStream(streamed, cancellation: cancellation)
-
-            if job.mode == .archive {
-                report(.unpacking, nil, nil)
-            }
-            report(.verifying, nil, nil)
-
-            let sourceBytes = try await exactBytes(
-                source,
-                paths: job.entries.map { ThrowCommand.join(job.sourceDir, $0.name) }
-            )
-            let destinationBytes = try await exactBytes(destination, paths: [tempDir])
-
-            if cancellation.isCancelled { throw ThrowCancelled() }
-            guard sourceBytes == destinationBytes else {
-                throw TossError(t("Verification failed: source {} bytes, destination {} bytes",
-                                  sourceBytes, destinationBytes))
-            }
-            OperationLog.info(t("Verified {} bytes", destinationBytes))
-
-            let move = try await runSSH(
-                destination,
-                ThrowCommand.moveScript(temp: tempDir, target: targetDir)
-            )
-            try requireSuccess(
-                move,
-                cancellation: cancellation,
-                message: t("Could not move the transfer into place: {}", move.stderr.trimmed)
-            )
-            OperationLog.success(t("Placed into {}", targetDir))
-
-            report(.finished, 1, destinationBytes)
-        } catch {
-            _ = try? await runSSH(destination, "rm -rf \(ThrowCommand.remoteQuote(tempDir))")
-            OperationLog.warning(t("Removed temporary folder {}", tempDir))
-            throw error
+        if job.mode == .archive {
+            report(.unpacking, nil, nil)
         }
+        report(.verifying, nil, nil)
+
+        let sourceBytes = try await exactBytes(
+            source,
+            paths: job.entries.map { ThrowCommand.join(job.sourceDir, $0.name) }
+        )
+        let destinationBytes = try await exactBytes(
+            destination,
+            paths: placedPaths(in: targetDir, entries: job.entries, mode: job.mode, finalName: finalName)
+        )
+
+        if cancellation.isCancelled { throw ThrowCancelled() }
+        guard sourceBytes == destinationBytes else {
+            throw TossError(t("Verification failed: source {} bytes, destination {} bytes",
+                              sourceBytes, destinationBytes))
+        }
+        OperationLog.info(t("Verified {} bytes", destinationBytes))
+        OperationLog.success(t("Placed into {}", targetDir))
+
+        report(.finished, 1, destinationBytes)
     }
 
     // MARK: - A → 本机
@@ -227,7 +206,8 @@ struct ThrowService {
         let sourceCommand = ThrowCommand.source(
             directory: job.sourceDir,
             entries: job.entries,
-            mode: job.mode
+            mode: job.mode,
+            verbose: job.mode == .archive
         )
 
         let payloadURL: URL
@@ -240,8 +220,7 @@ struct ThrowService {
                 destination: nil,
                 destinationCommand: "",
                 localFile: payloadURL,
-                expectedBytes: job.totalBytes,
-                showProgress: true,
+                progressPlan: .bytes(job.totalBytes),
                 cancellation: cancellation,
                 report: report
             )
@@ -255,8 +234,7 @@ struct ThrowService {
                 destination: nil,
                 destinationCommand: "",
                 localFile: archive,
-                expectedBytes: job.totalBytes,
-                showProgress: false,
+                progressPlan: await remoteProgressPlan(for: job, on: source),
                 cancellation: cancellation,
                 report: report
             )
@@ -317,82 +295,122 @@ struct ThrowService {
             throw TossError(t("No files selected to send"))
         }
 
-        let tempDir = ThrowCommand.join(targetDir, ".toss-incoming-\(UUID().uuidString)")
+        try await requireExistingDirectory(destination, targetDir)
+        let plan = try await placement(for: job, on: destination, in: targetDir)
+        let finalName = self.finalName(plan, entries: job.entries)
 
-        let prepare = try await runSSH(
-            destination,
-            "mkdir -p \(ThrowCommand.remoteQuote(targetDir)) \(ThrowCommand.remoteQuote(tempDir))"
+        report(.transferring, nil, 0)
+
+        let sourceCommand = ThrowCommand.source(
+            directory: job.sourceDir,
+            entries: job.entries,
+            mode: job.mode,
+            verbose: job.mode == .archive
         )
-        try requireSuccess(
-            prepare,
+        let destinationCommand = ThrowCommand.destination(
+            root: targetDir,
+            name: finalName,
+            mode: job.mode
+        )
+
+        let streamed = try await stream(
+            source: .local,
+            sourceCommand: sourceCommand,
+            destination: destination,
+            destinationCommand: destinationCommand,
+            localFile: nil,
+            progressPlan: localProgressPlan(for: job),
             cancellation: cancellation,
-            message: t("Could not prepare the destination: {}", prepare.stderr.trimmed)
+            report: report
         )
-        OperationLog.success(t("Prepared {} on {}", targetDir, destination.name))
 
-        do {
-            report(.transferring, nil, 0)
+        if cancellation.isCancelled { throw ThrowCancelled() }
+        try checkStream(streamed, cancellation: cancellation)
 
-            let sourceCommand = ThrowCommand.source(
-                directory: job.sourceDir,
-                entries: job.entries,
-                mode: job.mode
+        if job.mode == .archive {
+            report(.unpacking, nil, nil)
+        }
+        report(.verifying, nil, nil)
+
+        let sourceBytes = localSourceBytes(
+            directory: job.sourceDir,
+            entries: job.entries
+        )
+        let destinationBytes = try await exactBytes(
+            destination,
+            paths: placedPaths(in: targetDir, entries: job.entries, mode: job.mode, finalName: finalName)
+        )
+
+        if cancellation.isCancelled { throw ThrowCancelled() }
+        guard sourceBytes == destinationBytes else {
+            throw TossError(t("Verification failed: source {} bytes, destination {} bytes",
+                              sourceBytes, destinationBytes))
+        }
+        OperationLog.info(t("Verified {} bytes", destinationBytes))
+        OperationLog.success(t("Placed into {}", targetDir))
+
+        report(.finished, 1, destinationBytes)
+    }
+
+    // MARK: - 远端只读约束
+
+    /// 服务器上的目录由用户自己维护：Toss 只检查存在性，不创建。
+    private func requireExistingDirectory(_ server: ServerConfig, _ directory: String) async throws {
+        let probe = try await runSSH(server, ThrowCommand.probeDirectory(directory))
+        if probe.code == 255 {
+            throw TossError(
+                t("Could not reach {}: {}\nHint: check the server address and SSH key (ssh {})",
+                  server.name, probe.stderr.trimmed, server.address)
             )
-            let destinationCommand = ThrowCommand.destination(
-                root: tempDir,
-                entries: job.entries,
-                mode: job.mode
+        }
+        guard probe.code == 0 else {
+            throw TossError(
+                t("Directory not found on {}: {}\nCreate it yourself on the server first — Toss never creates or deletes anything there.",
+                  server.name, directory)
             )
+        }
+    }
 
-            let streamed = try await stream(
-                source: .local,
-                sourceCommand: sourceCommand,
-                destination: destination,
-                destinationCommand: destinationCommand,
-                localFile: nil,
-                expectedBytes: job.totalBytes,
-                showProgress: job.mode == .direct,
-                cancellation: cancellation,
-                report: report
+    /// 读一遍目标目录里已有的名字，决定这次能落到哪里；撞名就停手。
+    private func placement(
+        for job: TransferJob,
+        on server: ServerConfig,
+        in directory: String
+    ) async throws -> RemotePlacement {
+        let result = try await runSSH(server, ThrowCommand.names(directory))
+        guard result.code == 0 else {
+            throw TossError(t("Could not list {}: {}", directory, result.stderr.trimmed))
+        }
+        let existing = Set(ThrowListing.parseNames(result.stdout))
+        let plan = RemotePlacement.plan(mode: job.mode, entries: job.entries, existing: existing)
+        if case .blocked(let name) = plan {
+            throw TossError(
+                t("{} already exists in {} — Toss never overwrites or deletes anything on a server. Rename it there first.",
+                  name, directory)
             )
+        }
+        return plan
+    }
 
-            if cancellation.isCancelled { throw ThrowCancelled() }
-            try checkStream(streamed, cancellation: cancellation)
+    private func finalName(_ plan: RemotePlacement, entries: [ThrowEntry]) -> String {
+        switch plan {
+        case .direct(let name): return name
+        case .archive: return entries.first?.name ?? "payload"
+        case .blocked: return ""
+        }
+    }
 
-            if job.mode == .archive {
-                report(.unpacking, nil, nil)
-            }
-            report(.verifying, nil, nil)
-
-            let sourceBytes = localSourceBytes(
-                directory: job.sourceDir,
-                entries: job.entries
-            )
-            let destinationBytes = try await exactBytes(destination, paths: [tempDir])
-
-            if cancellation.isCancelled { throw ThrowCancelled() }
-            guard sourceBytes == destinationBytes else {
-                throw TossError(t("Verification failed: source {} bytes, destination {} bytes",
-                                  sourceBytes, destinationBytes))
-            }
-            OperationLog.info(t("Verified {} bytes", destinationBytes))
-
-            let move = try await runSSH(
-                destination,
-                ThrowCommand.moveScript(temp: tempDir, target: targetDir)
-            )
-            try requireSuccess(
-                move,
-                cancellation: cancellation,
-                message: t("Could not move the transfer into place: {}", move.stderr.trimmed)
-            )
-            OperationLog.success(t("Placed into {}", targetDir))
-
-            report(.finished, 1, destinationBytes)
-        } catch {
-            _ = try? await runSSH(destination, "rm -rf \(ThrowCommand.remoteQuote(tempDir))")
-            OperationLog.warning(t("Removed temporary folder {}", tempDir))
-            throw error
+    private func placedPaths(
+        in directory: String,
+        entries: [ThrowEntry],
+        mode: ThrowMode,
+        finalName: String
+    ) -> [String] {
+        switch mode {
+        case .direct:
+            return [ThrowCommand.join(directory, finalName)]
+        case .archive:
+            return entries.map { ThrowCommand.join(directory, $0.name) }
         }
     }
 
@@ -412,6 +430,49 @@ struct ThrowService {
             throw TossError(t("Could not verify the transfer: {}", result.stderr.trimmed))
         }
         return Int64(result.stdout.trimmed) ?? 0
+    }
+
+    // MARK: - 进度计划
+
+    private func remoteProgressPlan(for job: TransferJob, on source: ServerConfig) async -> TransferProgressPlan {
+        guard job.mode == .archive else { return .bytes(job.totalBytes) }
+        return .items(await remoteItemCount(source, directory: job.sourceDir, entries: job.entries))
+    }
+
+    private func localProgressPlan(for job: TransferJob) -> TransferProgressPlan {
+        guard job.mode == .archive else { return .bytes(job.totalBytes) }
+        return .items(localItemCount(directory: job.sourceDir, entries: job.entries))
+    }
+
+    private func remoteItemCount(
+        _ server: ServerConfig,
+        directory: String,
+        entries: [ThrowEntry]
+    ) async -> Int {
+        let result = try? await runSSH(
+            server,
+            ThrowCommand.countItems(directory: directory, entries: entries)
+        )
+        guard let result, result.code == 0 else { return 0 }
+        return Int(result.stdout.trimmed) ?? 0
+    }
+
+    private func localItemCount(directory: String, entries: [ThrowEntry]) -> Int {
+        entries.reduce(0) { total, entry in
+            let path = (ThrowCommand.join(directory, entry.name) as NSString).expandingTildeInPath
+            var isDirectory: ObjCBool = false
+            guard FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory) else {
+                return total
+            }
+            guard isDirectory.boolValue else { return total + 1 }
+            var count = 1
+            if let enumerator = FileManager.default.enumerator(atPath: path) {
+                while enumerator.nextObject() != nil {
+                    count += 1
+                }
+            }
+            return total + count
+        }
     }
 
     private func exactLocalBytes(_ url: URL) -> Int64 {
@@ -492,8 +553,7 @@ struct ThrowService {
         destination: ServerConfig?,
         destinationCommand: String,
         localFile: URL?,
-        expectedBytes: Int64,
-        showProgress: Bool,
+        progressPlan: TransferProgressPlan,
         cancellation: ThrowCancellation,
         report: @escaping Report
     ) async throws -> StreamResult {
@@ -506,8 +566,7 @@ struct ThrowService {
                         destination: destination,
                         destinationCommand: destinationCommand,
                         localFile: localFile,
-                        expectedBytes: expectedBytes,
-                        showProgress: showProgress,
+                        progressPlan: progressPlan,
                         cancellation: cancellation,
                         report: report
                     )
@@ -525,8 +584,7 @@ struct ThrowService {
         destination: ServerConfig?,
         destinationCommand: String,
         localFile: URL?,
-        expectedBytes: Int64,
-        showProgress: Bool,
+        progressPlan: TransferProgressPlan,
         cancellation: ThrowCancellation,
         report: @escaping Report
     ) throws -> StreamResult {
@@ -607,6 +665,8 @@ struct ThrowService {
         var count: Int64 = 0
         var writeFailed = false
         var lastReport = Date.distantPast
+        var tarProgress = TarProgress()
+        let stderrReader = try? FileHandle(forReadingFrom: sourceErrURL)
 
         while !cancellation.isCancelled {
             let data = readHandle.readData(ofLength: 65536)
@@ -625,10 +685,11 @@ struct ThrowService {
             let now = Date()
             if now.timeIntervalSince(lastReport) >= 0.25 {
                 lastReport = now
-                let progress = showProgress && expectedBytes > 0
-                    ? min(0.98, Double(count) / Double(expectedBytes))
-                    : nil
-                report(.transferring, progress, count)
+                if let stderrReader {
+                    let chunk = (try? stderrReader.readDataToEndOfFile()) ?? Data()
+                    tarProgress.absorb(String(decoding: chunk, as: UTF8.self))
+                }
+                report(.transferring, progressFraction(progressPlan, count: count, tar: tarProgress), count)
             }
         }
 
@@ -647,17 +708,39 @@ struct ThrowService {
             cancellation.unregister(destinationProcess)
         }
 
+        if let stderrReader {
+            let chunk = (try? stderrReader.readDataToEndOfFile()) ?? Data()
+            tarProgress.absorb(String(decoding: chunk, as: UTF8.self))
+            try? stderrReader.close()
+        }
+
         sourceErr.closeFile()
         destinationErr?.closeFile()
 
-        let progress = showProgress && expectedBytes > 0 && !cancellation.isCancelled
-            ? min(0.99, Double(count) / Double(expectedBytes))
-            : nil
-        report(.transferring, progress, count)
+        let finalProgress: Double?
+        if cancellation.isCancelled {
+            finalProgress = nil
+        } else {
+            switch progressPlan {
+            case .none:
+                finalProgress = nil
+            case .bytes(let expected):
+                finalProgress = expected > 0 ? min(0.99, Double(count) / Double(expected)) : nil
+            case .items(let total):
+                finalProgress = total > 0 ? 0.99 : nil
+            }
+        }
+        report(.transferring, finalProgress, count)
 
         let sourceCode = sourceProcess.terminationStatus
         let destinationCode = destinationProcess?.terminationStatus ?? 0
-        let sourceErrorText = readText(sourceErrURL)
+        let rawSourceError = readText(sourceErrURL)
+        let sourceErrorText: String
+        if case .items = progressPlan {
+            sourceErrorText = TarProgress.errors(from: rawSourceError)
+        } else {
+            sourceErrorText = rawSourceError
+        }
         let destinationErrorText = readText(destinationErrURL)
 
         if sourceCode == 0 && destinationCode == 0 {
@@ -673,6 +756,22 @@ struct ThrowService {
             destinationCode: destinationCode,
             destinationError: destinationErrorText
         )
+    }
+
+    private func progressFraction(
+        _ plan: TransferProgressPlan,
+        count: Int64,
+        tar: TarProgress
+    ) -> Double? {
+        switch plan {
+        case .none:
+            return nil
+        case .bytes(let expected):
+            guard expected > 0 else { return nil }
+            return min(0.98, Double(count) / Double(expected))
+        case .items(let total):
+            return tar.fraction(total: total)
+        }
     }
 
     private func readText(_ url: URL) -> String {
@@ -767,18 +866,6 @@ struct ThrowService {
         if streamed.sourceCode != 0 || streamed.destinationCode != 0 {
             let code = streamed.sourceCode != 0 ? streamed.sourceCode : streamed.destinationCode
             throw TossError(t("Transfer failed with exit code {}", code))
-        }
-    }
-
-    private func requireSuccess(
-        _ result: ProcessResult,
-        cancellation: ThrowCancellation,
-        message: String
-    ) throws {
-        if cancellation.isCancelled { throw ThrowCancelled() }
-        guard result.code == 0 else {
-            let detail = result.stderr.trimmed
-            throw TossError(detail.isEmpty ? message : detail)
         }
     }
 

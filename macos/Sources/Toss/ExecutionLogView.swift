@@ -4,7 +4,7 @@ import SwiftUI
 /// 执行日志页：浏览、拖拽、SSH 命令、传输阶段和错误，全部按时间顺序列出来。
 struct ExecutionLogView: View {
     @ObservedObject private var log = OperationLog.shared
-    @Environment(\.dismiss) private var dismiss
+    let onClose: () -> Void
 
     @State private var query = ""
     @State private var autoScroll = true
@@ -25,11 +25,19 @@ struct ExecutionLogView: View {
             Divider()
             footer
         }
-        .frame(minWidth: 780, minHeight: 480)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private var header: some View {
         HStack(spacing: 10) {
+            Button {
+                onClose()
+            } label: {
+                Label(t("Back"), systemImage: "chevron.left")
+            }
+            .buttonStyle(.borderless)
+            .help(t("Back to the machine"))
+
             Text(t("Execution Log"))
                 .font(.title3.weight(.semibold))
 
@@ -47,7 +55,7 @@ struct ExecutionLogView: View {
                 .textFieldStyle(.roundedBorder)
                 .frame(width: 200)
         }
-        .padding(.horizontal, 16)
+        .padding(.horizontal, 20)
         .padding(.vertical, 12)
     }
 
@@ -76,8 +84,9 @@ struct ExecutionLogView: View {
                                 .id(entry.id)
                         }
                     }
-                    .padding(12)
+                    .padding(14)
                 }
+                .scrollIndicators(.visible, axes: .vertical)
                 .onAppear {
                     if let last = filtered.last {
                         proxy.scrollTo(last.id, anchor: .bottom)
@@ -96,8 +105,9 @@ struct ExecutionLogView: View {
     private func row(_ entry: LogEntry) -> some View {
         HStack(alignment: .top, spacing: 8) {
             Text(entry.timeText)
+                .lineLimit(1)
                 .foregroundStyle(.tertiary)
-                .frame(width: 78, alignment: .leading)
+                .frame(width: 96, alignment: .leading)
 
             Text(levelLabel(entry.level))
                 .foregroundStyle(levelColor(entry.level))
@@ -133,12 +143,11 @@ struct ExecutionLogView: View {
             }
             .disabled(log.entries.isEmpty)
 
-            Button(t("Done")) {
-                dismiss()
+            Button(t("Back")) {
+                onClose()
             }
-            .keyboardShortcut(.defaultAction)
         }
-        .padding(.horizontal, 16)
+        .padding(.horizontal, 20)
         .padding(.vertical, 10)
     }
 
