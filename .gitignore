@@ -9,6 +9,7 @@ __pycache__/
 build/
 
 # Swift
+.build/
 macos/.build/
 macos/Resources/AppIcon.iconset/
 

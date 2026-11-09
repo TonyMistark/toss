@@ -115,6 +115,24 @@ struct ThrowDestinationsTests {
         )
     }
 
+    @Test("顶部机器栏包含本机与所有服务器，来源也在其中")
+    func machinesIncludeEveryone() {
+        #expect(
+            ThrowTargets.machines(servers: [a, b])
+                == [.local, .server(a), .server(b)]
+        )
+        #expect(ThrowTargets.machines(servers: []) == [.local])
+    }
+
+    @Test("按 id 找回拉弓松手的目标")
+    func resolvesTargetByID() {
+        #expect(ThrowTargets.target(id: "local", servers: [a]) == .local)
+        #expect(ThrowTargets.target(id: "server:a", servers: [a]) == .server(a))
+        #expect(ThrowTargets.target(id: "server:b", servers: [a, b]) == .server(b))
+        #expect(ThrowTargets.target(id: "server:x", servers: [a]) == nil)
+        #expect(ThrowTargets.target(id: "bogus", servers: [a]) == nil)
+    }
+
     @Test("本机作为来源能编码进拖拽数据，往返不丢信息")
     func encodesLocalSource() throws {
         let payload = ThrowPayload(
@@ -301,6 +319,250 @@ struct ThrowPlanTests {
     }
 }
 
+// MARK: - 远端落点
+
+@Suite("远端落点")
+struct RemotePlacementTests {
+    private func file(_ name: String) -> ThrowEntry {
+        ThrowEntry(name: name, isDirectory: false, byteSize: 1)
+    }
+
+    private func folder(_ name: String) -> ThrowEntry {
+        ThrowEntry(name: name, isDirectory: true, byteSize: 1)
+    }
+
+    @Test("单文件撞名时换个名字，不覆盖")
+    func directRenamesInsteadOfOverwriting() {
+        #expect(
+            RemotePlacement.plan(mode: .direct, entries: [file("report.pdf")], existing: [])
+                == .direct(name: "report.pdf")
+        )
+        #expect(
+            RemotePlacement.plan(mode: .direct, entries: [file("report.pdf")], existing: ["report.pdf"])
+                == .direct(name: "report-2.pdf")
+        )
+    }
+
+    @Test("文件夹或多选撞名直接拒绝，不改名也不删")
+    func archiveBlocksOnCollision() {
+        #expect(
+            RemotePlacement.plan(mode: .archive, entries: [folder("photos")], existing: [])
+                == .archive
+        )
+        #expect(
+            RemotePlacement.plan(mode: .archive, entries: [folder("photos")], existing: ["photos"])
+                == .blocked(name: "photos")
+        )
+        #expect(
+            RemotePlacement.plan(mode: .archive, entries: [file("a.txt"), file("b.txt")], existing: ["b.txt"])
+                == .blocked(name: "b.txt")
+        )
+    }
+}
+
+// MARK: - 归档进度
+
+@Suite("归档进度")
+struct TarProgressTests {
+    @Test("按整行累计，未写完的半行留在 pending")
+    func countsWholeLines() {
+        var progress = TarProgress()
+        progress.absorb("./photos/\n./photos/a.txt\n./pho")
+        #expect(progress.processed == 2)
+        #expect(progress.pending == "./pho")
+
+        progress.absorb("tos/b.txt\n")
+        #expect(progress.processed == 3)
+        #expect(progress.pending == "")
+    }
+
+    @Test("进度封顶 98%，分母为 0 时不给百分比")
+    func fraction() {
+        var progress = TarProgress()
+        #expect(progress.fraction(total: 0) == nil)
+        #expect(progress.fraction(total: 10) == 0)
+
+        progress.absorb(String(repeating: "x\n", count: 20))
+        #expect(progress.fraction(total: 10) == 0.98)
+    }
+
+    @Test("剥掉 -v 的条目行，真正的报错保留")
+    func stripsVerboseLines() {
+        let gnu = """
+        ./photos/
+        ./photos/a.txt
+        tar: ./photos/locked: Cannot stat: Permission denied
+        tar: Exiting with failure status due to previous errors
+        """
+        #expect(
+            TarProgress.errors(from: gnu)
+                == "tar: ./photos/locked: Cannot stat: Permission denied\n"
+                    + "tar: Exiting with failure status due to previous errors"
+        )
+
+        let bsdtar = """
+        a ./photos
+        a ./photos/a.txt
+        tar: Error exit delayed from previous errors.
+        """
+        #expect(
+            TarProgress.errors(from: bsdtar)
+                == "tar: Error exit delayed from previous errors."
+        )
+    }
+}
+
+@Suite("投篮弧")
+struct ShotArcTests {
+    @Test("瞄准弧顺着方向拱到机器栏那一层，不贴具体篮筐")
+    func previewStopsAtHorizon() {
+        let mouse = CGPoint(x: 100, y: 600)
+        let curve = ShotArc.preview(
+            from: mouse,
+            direction: CGPoint(x: 0, y: -1),
+            horizon: 200,
+            power: 80
+        )
+        #expect(curve.start == mouse)
+        #expect(curve.end.y == 200)
+        #expect(curve.end.x == 100)
+        // 向上拱：控制点高于两端的中点。
+        #expect(curve.control.y < (curve.start.y + curve.end.y) / 2)
+    }
+
+    @Test("拉得越远拱得越高")
+    func liftsByPull() {
+        let mouse = CGPoint(x: 100, y: 600)
+        let short = ShotArc.preview(
+            from: mouse, direction: CGPoint(x: 0, y: -1), horizon: 200, power: 80
+        )
+        let far = ShotArc.preview(
+            from: mouse, direction: CGPoint(x: 0, y: -1), horizon: 200, power: 180
+        )
+        #expect(far.control.y < short.control.y)
+    }
+
+    @Test("弧顶高高越过两端，再落进篮筐")
+    func apexFliesAboveBothEnds() {
+        let mouse = CGPoint(x: 300, y: 620)
+        let basket = CGPoint(x: 360, y: 200)
+        let curve = ShotArc.shot(from: mouse, to: basket, power: 160)
+        let heights = stride(from: 0.0, through: 1.0, by: 0.05)
+            .map { ShotArc.point(curve, t: CGFloat($0)).y }
+        #expect(heights.min()! < min(mouse.y, basket.y))
+        // 左边起点一定低于弧顶，落点之前也确实在下降。
+        #expect(ShotArc.point(curve, t: 0.55).y < ShotArc.point(curve, t: 0.85).y)
+    }
+
+    @Test("出手弧从松开的位置飞向篮筐")
+    func shotEndsAtBasket() {
+        let mouse = CGPoint(x: 120, y: 640)
+        let basket = CGPoint(x: 360, y: 230)
+        let curve = ShotArc.shot(from: mouse, to: basket, power: 100)
+        #expect(ShotArc.point(curve, t: 0) == curve.start)
+        #expect(ShotArc.point(curve, t: 1) == curve.end)
+        #expect(curve.start == mouse)
+        #expect(curve.end == basket)
+        // 控制点抬到两点连线之上，弧线才会拱起来。
+        #expect(curve.control.y < (mouse.y + basket.y) / 2)
+    }
+}
+
+// MARK: - 拉弓瞄准
+
+@Suite("拉弓瞄准")
+struct ShotAimTests {
+    private let machine = MachineAim(
+        targetID: "server:b",
+        cardFrame: CGRect(x: 200, y: 150, width: 220, height: 130),
+        baskets: [
+            BasketAim(anchor: CGPoint(x: 310, y: 190),
+                      rect: CGRect(x: 208, y: 177, width: 204, height: 26)),
+            BasketAim(anchor: CGPoint(x: 310, y: 220),
+                      rect: CGRect(x: 208, y: 207, width: 204, height: 26)),
+        ]
+    )
+
+    @Test("鼠标在下面、射线穿过篮筐就算投中")
+    func hitsBasket() {
+        let aim = ShotAim.aim(
+            from: CGPoint(x: 310, y: 500),
+            through: CGPoint(x: 310, y: 400),
+            power: 120,
+            among: [machine]
+        )
+        #expect(aim?.hit == true)
+    }
+
+    @Test("同一台机器命中整列时，射线指到哪个高度就选哪个文件夹")
+    func selectsFolderByCrossingHeight() {
+        let mouse = CGPoint(x: 500, y: 600)
+        // 抬得陡：交点落在卡片上方，选最上面的文件夹。
+        let steep = ShotAim.folderIndex(from: mouse,
+                                        direction: CGPoint(x: -0.3, y: -0.954),
+                                        machine: machine, power: 120)
+        #expect(steep == 0)
+        // 压得平：交点落到卡片下方，选最下面的文件夹。
+        let flat = ShotAim.folderIndex(from: mouse,
+                                       direction: CGPoint(x: -0.9, y: -0.436),
+                                       machine: machine, power: 120)
+        #expect(flat == 1)
+    }
+
+    @Test("射线几乎竖直时退回力度分档，越界夹回范围")
+    func fallsBackToPowerBands() {
+        let vertical = CGPoint(x: 0, y: -1)
+        #expect(ShotAim.folderIndex(from: CGPoint(x: 310, y: 500),
+                                    direction: vertical,
+                                    machine: machine, power: 20) == 1)
+        #expect(ShotAim.folderIndex(from: CGPoint(x: 310, y: 500),
+                                    direction: vertical,
+                                    machine: machine, power: 400) == 0)
+        #expect(ShotAim.bandIndex(power: 400, count: 1) == 0)
+    }
+
+    @Test("射线擦不到篮筐时给最近的筐，但算没投中")
+    func missesButStillAims() {
+        let aim = ShotAim.aim(
+            from: CGPoint(x: 100, y: 500),
+            through: CGPoint(x: 300, y: 400),
+            power: 120,
+            among: [machine]
+        )
+        #expect(aim?.hit == false)
+        #expect(aim?.basket == 1)
+    }
+
+    @Test("拉得太短或还没有目标时不投篮")
+    func needsPullAndTargets() {
+        #expect(ShotAim.aim(from: CGPoint(x: 310, y: 500),
+                           through: CGPoint(x: 310, y: 490),
+                           power: 10,
+                           among: [machine]) == nil)
+        #expect(ShotAim.aim(from: CGPoint(x: 310, y: 500),
+                           through: CGPoint(x: 310, y: 400),
+                           power: 120,
+                           among: []) == nil)
+    }
+
+    @Test("射线与矩形求交：外面给距离，里面给 0，擦不到给 nil")
+    func intersectsRects() {
+        let rect = CGRect(x: 0, y: 0, width: 100, height: 50)
+        #expect(ShotAim.rayDistance(from: CGPoint(x: 50, y: 200),
+                                    direction: CGPoint(x: 0, y: -1),
+                                    rect: rect) == 150)
+        #expect(ShotAim.rayDistance(from: CGPoint(x: 50, y: 25),
+                                    direction: CGPoint(x: 0, y: -1),
+                                    rect: rect) == 0)
+        #expect(ShotAim.rayDistance(from: CGPoint(x: 200, y: 200),
+                                    direction: CGPoint(x: 0, y: -1),
+                                    rect: rect) == nil)
+        #expect(ShotAim.rayDistance(from: CGPoint(x: 50, y: 200),
+                                    direction: CGPoint(x: 0, y: 1),
+                                    rect: rect) == nil)
+    }
+}
+
 // MARK: - 命令拼接
 
 @Suite("投递命令")
@@ -319,10 +581,10 @@ struct ThrowCommandTests {
         #expect(ThrowCommand.remoteQuote("/tmp/a b") == "'/tmp/a b'")
     }
 
-    @Test("浏览前先建默认目录，~ 用 $HOME 展开")
-    func ensureDirectoryCreatesDefaultFolder() {
-        #expect(ThrowCommand.ensureDirectory("~/.toss") == "mkdir -p \"$HOME\"/'.toss'")
-        #expect(ThrowCommand.ensureDirectory("/srv/data") == "mkdir -p '/srv/data'")
+    @Test("远端只做检查，不建目录")
+    func probeOnlyChecks() {
+        #expect(ThrowCommand.probeDirectory("~/.toss") == "test -d \"$HOME\"/'.toss'")
+        #expect(ThrowCommand.probeDirectory("/srv/data") == "test -d '/srv/data'")
     }
 
     @Test("源端文件带 ./ 前缀，-rf 之类的名字不会被当成选项")
@@ -333,41 +595,75 @@ struct ThrowCommandTests {
                 == "cd '/tmp/a b' && exec cat './-rf'"
         )
         #expect(
+            ThrowCommand.source(directory: "/tmp", entries: [entry], mode: .archive, verbose: true)
+                == "cd '/tmp' && exec tar -czvf - './-rf'"
+        )
+        #expect(
             ThrowCommand.source(directory: "/tmp", entries: [entry], mode: .archive)
                 == "cd '/tmp' && exec tar -czf - './-rf'"
         )
     }
 
-    @Test("目标端同名文件加 -2 后缀，隐藏文件也搬走")
-    func moveScriptRenamesAndMovesHiddenFiles() throws {
+    @Test("目标端直接落进既有目录，不建目录、不清理")
+    func destinationWritesIntoExistingFolder() {
+        #expect(
+            ThrowCommand.destination(root: "/data/inbox", name: "report.pdf", mode: .direct)
+                == "cd '/data/inbox' && exec cat > 'report.pdf'"
+        )
+        #expect(
+            ThrowCommand.destination(root: "/data/inbox", name: "photos", mode: .archive)
+                == "cd '/data/inbox' && exec tar -xzf -"
+        )
+    }
+
+    @Test("归档源端带 -v 输出文件名，条目计数脚本只读")
+    func archiveSourceIsVerbose() {
+        let entry = ThrowEntry(name: "photos", isDirectory: true, byteSize: 10)
+        #expect(
+            ThrowCommand.source(directory: "/data", entries: [entry], mode: .archive, verbose: true)
+                == "cd '/data' && exec tar -czvf - './photos'"
+        )
+        #expect(
+            ThrowCommand.countItems(directory: "/data", entries: [entry])
+                .contains("find './photos' | wc -l")
+        )
+    }
+
+    @Test("所有远端命令都不创建目录、不删除任何东西")
+    func remoteScriptsNeverCreateOrDelete() {
+        let entry = ThrowEntry(name: "a.txt", isDirectory: false, byteSize: 1)
+        let scripts = [
+            ThrowCommand.probeDirectory("/data"),
+            ThrowCommand.names("/data"),
+            ThrowCommand.countItems(directory: "/data", entries: [entry]),
+            ThrowCommand.list(directory: "/data"),
+            ThrowCommand.exactBytes(paths: ["/data/a.txt"]),
+            ThrowCommand.source(directory: "/data", entries: [entry], mode: .archive),
+            ThrowCommand.destination(root: "/data", name: "a.txt", mode: .archive),
+        ]
+        for script in scripts {
+            #expect(!script.contains("mkdir"))
+            #expect(!script.contains("rm -"))
+            #expect(!script.contains("mv "))
+        }
+    }
+
+    @Test("只列名字的脚本输出能逐行解析")
+    func namesScriptParses() throws {
         let root = FileManager.default.temporaryDirectory
-            .appendingPathComponent("toss-move-test-\(UUID().uuidString)")
-        let incoming = root.appendingPathComponent("incoming", isDirectory: true)
-        let target = root.appendingPathComponent("target", isDirectory: true)
-        try FileManager.default.createDirectory(at: incoming, withIntermediateDirectories: true)
-        try FileManager.default.createDirectory(at: target, withIntermediateDirectories: true)
+            .appendingPathComponent("toss-names-test-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
 
-        try "old".write(to: target.appendingPathComponent("report.pdf"), atomically: true, encoding: .utf8)
-        try "new".write(to: incoming.appendingPathComponent("report.pdf"), atomically: true, encoding: .utf8)
-        try "note".write(to: incoming.appendingPathComponent("notes.txt"), atomically: true, encoding: .utf8)
-        try "hidden".write(to: incoming.appendingPathComponent(".env"), atomically: true, encoding: .utf8)
+        try "a".write(to: root.appendingPathComponent("report.txt"), atomically: true, encoding: .utf8)
+        try "b".write(to: root.appendingPathComponent(".env"), atomically: true, encoding: .utf8)
+        try FileManager.default.createDirectory(
+            at: root.appendingPathComponent("photos", isDirectory: true),
+            withIntermediateDirectories: true
+        )
 
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/bin/sh")
-        process.arguments = [
-            "-c",
-            ThrowCommand.moveScript(temp: incoming.path, target: target.path),
-        ]
-        try process.run()
-        process.waitUntilExit()
-
-        #expect(process.terminationStatus == 0)
-        #expect(FileManager.default.fileExists(atPath: target.appendingPathComponent("report.pdf").path))
-        #expect(FileManager.default.fileExists(atPath: target.appendingPathComponent("report-2.pdf").path))
-        #expect(FileManager.default.fileExists(atPath: target.appendingPathComponent("notes.txt").path))
-        #expect(FileManager.default.fileExists(atPath: target.appendingPathComponent(".env").path))
-        #expect(!FileManager.default.fileExists(atPath: incoming.path))
+        let names = Set(ThrowListing.parseNames(try runShell(ThrowCommand.names(root.path))))
+        #expect(names == ["report.txt", ".env", "photos"])
     }
 
     @Test("精确字节数按文件逐个求和")

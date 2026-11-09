@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 enum ServerEditorTarget: Identifiable {
     case add
@@ -15,17 +16,26 @@ enum ServerEditorTarget: Identifiable {
     }
 }
 
+/// 顶部一排机器，下面是被选中那台的文件列表，底部是传输队列。
+/// 拖动文件时，其余机器展开文件夹篮筐，并从文件画出一条投篮弧线指向悬停的篮筐。
 struct ContentView: View {
     @ObservedObject var state: AppState
+    @StateObject private var drag = DragSession()
 
     @State private var editorTarget: ServerEditorTarget?
     @State private var showLog = false
 
     var body: some View {
-        HSplitView {
-            sidebar
-            detail
+        ZStack(alignment: .topLeading) {
+            content
+
+            if !showLog, drag.isDragging || drag.shot != nil {
+                ShotArcOverlay(drag: drag)
+            }
         }
+        .coordinateSpace(name: TossSpace.root)
+        // 兜底投递口：投篮投中就把系统拖拽「接住」，避免系统再播一次文件飞回原位的动画。
+        .onDrop(of: [UTType.json], delegate: WindowDropDelegate(drag: drag))
         .toolbar {
             ToolbarItemGroup(placement: .navigation) {
                 Button {
@@ -43,7 +53,7 @@ struct ContentView: View {
                 .help(t("Reload ~/.toss/config.json"))
 
                 Button {
-                    showLog = true
+                    showLog.toggle()
                 } label: {
                     Label(t("Execution Log"), systemImage: "doc.text.magnifyingglass")
                 }
@@ -59,101 +69,90 @@ struct ContentView: View {
         .sheet(item: $editorTarget) { target in
             ServerEditorView(state: state, target: target)
         }
-        .sheet(isPresented: $showLog) {
-            ExecutionLogView()
+        .onReceive(drag.$launch) { request in
+            // 拉弓松手且射线穿过篮筐：这一次投递真正开始。
+            guard let request,
+                  let target = ThrowTargets.target(id: request.targetID, servers: state.servers)
+            else { return }
+            let folders = state.folders(for: target)
+            guard request.basket >= 0, request.basket < folders.count else { return }
+            state.beginThrow(payload: request.payload, target: target,
+                             targetDir: folders[request.basket])
+        }
+        .onChange(of: state.selectedTarget) { _ in
+            showLog = false
         }
     }
 
-    private var sidebar: some View {
-        VStack(spacing: 0) {
-            List(selection: $state.selectedTarget) {
-                Section {
-                    Text(t("This Mac"))
-                        .lineLimit(1)
-                        .tag(ThrowTarget.local)
-                }
-
-                Section(t("Servers")) {
-                    ForEach(state.servers) { server in
-                        Text(server.name)
-                            .lineLimit(1)
-                            .tag(ThrowTarget.server(server))
-                    }
-                }
+    @ViewBuilder
+    private var content: some View {
+        if showLog {
+            ExecutionLogView {
+                showLog = false
             }
-            .listStyle(.sidebar)
+        } else if let target = state.selectedTarget {
+            VStack(spacing: 0) {
+                MachineBar(state: state, drag: drag, source: target)
+                Divider()
 
-            if !state.configExists {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(t("Configuration file not found"))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Button(t("Create Config Template")) {
-                        state.createConfigIfNeeded()
-                    }
-                    .controlSize(.small)
+                if !state.configExists {
+                    configBanner
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(10)
-                .background(Color.orange.opacity(0.10))
-            }
 
-            Divider()
+                detail(target)
 
-            HStack {
-                Button {
-                    editorTarget = .add
-                } label: {
-                    Label(t("Add Server"), systemImage: "plus")
-                }
-                .buttonStyle(.borderless)
-                Spacer()
+                Divider()
+                TransferQueueView(queue: state.queue)
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
+        } else {
+            VStack(spacing: 12) {
+                Image(systemName: "shippingbox")
+                    .font(.system(size: 40))
+                    .symbolRenderingMode(.hierarchical)
+                    .foregroundStyle(.tertiary)
+                Text(t("Pick a machine above"))
+                    .font(.title3)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .frame(minWidth: 220, idealWidth: 250, maxWidth: 340)
     }
 
-    private var detail: some View {
-        Group {
-            if let target = state.selectedTarget {
-                VStack(spacing: 0) {
-                    switch target {
-                    case .server(let server):
-                        ServerDetailView(state: state, server: server) {
-                            editorTarget = .edit(server)
-                        }
-                        .id(server.name)
-                    case .local:
-                        LocalDetailView(state: state)
-                    }
-
-                    Divider()
-                    ThrowDockView(state: state, source: target)
-
-                    Divider()
-                    TransferQueueView(queue: state.queue)
-                }
-            } else {
-                VStack(spacing: 12) {
-                    Image(systemName: "shippingbox")
-                        .font(.system(size: 40))
-                        .symbolRenderingMode(.hierarchical)
-                        .foregroundStyle(.tertiary)
-                    Text(t("Pick a machine on the left"))
-                        .font(.title3)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+    @ViewBuilder
+    private func detail(_ target: ThrowTarget) -> some View {
+        switch target {
+        case .server(let server):
+            ServerDetailView(state: state, drag: drag, server: server) {
+                editorTarget = .edit(server)
             }
+            .id(server.name)
+        case .local:
+            LocalDetailView(state: state, drag: drag)
         }
-        .frame(minWidth: 600)
+    }
+
+    private var configBanner: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "exclamationmark.triangle")
+                .foregroundStyle(.orange)
+            Text(t("Configuration file not found"))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Spacer()
+            Button(t("Create Config Template")) {
+                state.createConfigIfNeeded()
+            }
+            .controlSize(.small)
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 8)
+        .background(Color.orange.opacity(0.10))
     }
 }
 
 /// 选中本机：只列出它的收件文件夹，点开才加载文件。
 struct LocalDetailView: View {
     @ObservedObject var state: AppState
+    @ObservedObject var drag: DragSession
 
     var body: some View {
         VStack(spacing: 0) {
@@ -172,7 +171,7 @@ struct LocalDetailView: View {
 
             Divider()
 
-            FolderBrowserPanel(state: state, source: .local)
+            FolderBrowserPanel(state: state, drag: drag, source: .local)
                 .padding(.horizontal, 20)
                 .padding(.top, 10)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)

@@ -48,6 +48,20 @@ enum ThrowTarget: Hashable, Identifiable, Codable {
 
 /// 可投递的去处：排除来源自己，避免「自己拖自己」。
 enum ThrowTargets {
+    /// 顶部机器栏：本机 + 全部服务器。当前来源也在栏上，只是不能拖给自己。
+    static func machines(servers: [ServerConfig]) -> [ThrowTarget] {
+        [.local] + servers.map { .server($0) }
+    }
+
+    /// 按 `ThrowTarget.id` 找回目标；拉弓松手时只传这个字符串。
+    static func target(id: String, servers: [ServerConfig]) -> ThrowTarget? {
+        if id == ThrowTarget.local.id { return .local }
+        let prefix = "server:"
+        guard id.hasPrefix(prefix) else { return nil }
+        let name = String(id.dropFirst(prefix.count))
+        return servers.first { $0.name == name }.map(ThrowTarget.server)
+    }
+
     static func destinations(servers: [ServerConfig], source: ThrowTarget) -> [ThrowTarget] {
         let sourceName: String?
         if case .server(let server) = source {
@@ -144,6 +158,75 @@ struct ThrowPayload: Identifiable, Codable {
 enum ThrowMode {
     case direct
     case archive
+}
+
+/// 界面进度条怎么走：单文件按字节，归档按 tar 报出的条目数。
+enum TransferProgressPlan {
+    case none
+    case bytes(Int64)
+    case items(Int)
+}
+
+/// 累计 tar `-v` 写进 stderr 的条目行数，用来推进归档进度。
+struct TarProgress {
+    private(set) var processed = 0
+    private(set) var pending = ""
+
+    mutating func absorb(_ chunk: String) {
+        guard !chunk.isEmpty else { return }
+        pending.append(contentsOf: chunk)
+        var lines = 0
+        var index = pending.startIndex
+        while let newline = pending[index...].firstIndex(of: "\n") {
+            lines += 1
+            index = pending.index(after: newline)
+        }
+        guard lines > 0 else { return }
+        processed += lines
+        pending = String(pending[index...])
+    }
+
+    func fraction(total: Int) -> Double? {
+        guard total > 0 else { return nil }
+        return min(0.98, Double(processed) / Double(total))
+    }
+
+    /// 从 stderr 里剥掉 `-v` 打出的条目行：GNU tar 是 `./名字`，
+    /// macOS 的 bsdtar 是 `a ./名字`。真正的报错（`tar: ./名字: ...`）保持原样，
+    /// 免得把某个文件失败的原因也一起吞掉。
+    static func errors(from text: String) -> String {
+        let kept = text.split(separator: "\n")
+            .map(String.init)
+            .filter { line in
+                if line.hasPrefix("./") { return false }
+                guard let space = line.firstIndex(of: " ") else { return true }
+                let status = line[..<space]
+                let rest = line[line.index(after: space)...]
+                return !(status.count == 1 && rest.hasPrefix("./"))
+            }
+        return kept.joined(separator: "\n")
+    }
+}
+
+/// 远端落点：服务器是只读的，Toss 不建目录、不覆盖、不删除。
+/// 单文件直传可以换个没被占用的名字；归档撞名就停手，交给用户处理。
+enum RemotePlacement: Equatable {
+    case direct(name: String)
+    case archive
+    case blocked(name: String)
+
+    static func plan(mode: ThrowMode, entries: [ThrowEntry], existing: Set<String>) -> RemotePlacement {
+        switch mode {
+        case .direct:
+            let original = entries.first?.name ?? "payload"
+            return .direct(name: FileNaming.uniqueName(for: original, existing: existing))
+        case .archive:
+            if let clash = entries.first(where: { existing.contains($0.name) }) {
+                return .blocked(name: clash.name)
+            }
+            return .archive
+        }
+    }
 }
 
 // MARK: - 队列
@@ -294,7 +377,7 @@ enum ByteCount {
 }
 
 /// 同名文件加后缀保留：`report.pdf` → `report-2.pdf` → `report-3.pdf`。
-/// 与目标端 shell 里的命名规则保持一致（见 `ThrowCommand.moveScript`）。
+/// 本机落盘与远端直传都用它；远端归档撞名时直接报错，不改名。
 enum FileNaming {
     static func uniqueName(for name: String, existing: Set<String>) -> String {
         guard existing.contains(name) else { return name }

@@ -16,9 +16,20 @@ enum ThrowCommand {
         return quote(trimmed)
     }
 
-    /// 目录不存在时先建出来，保证默认的 `~/.toss` 在首次使用时也能直接浏览。
-    static func ensureDirectory(_ directory: String) -> String {
-        "mkdir -p \(remoteQuote(directory.trimmed))"
+    /// 只看，不动：远端目录必须由用户自己建好，Toss 绝不 `mkdir`。
+    static func probeDirectory(_ directory: String) -> String {
+        "test -d \(remoteQuote(directory.trimmed))"
+    }
+
+    /// 只列名字（用于撞名检查），不读大小，比 `list` 轻。
+    static func names(_ directory: String) -> String {
+        """
+        cd \(remoteQuote(directory.trimmed)) || exit 1
+        for f in * .[!.]*; do
+          [ -e "./$f" ] || continue
+          printf '%s\n' "$f"
+        done
+        """
     }
 
     static func join(_ directory: String, _ name: String) -> String {
@@ -30,59 +41,42 @@ enum ThrowCommand {
     }
 
     /// 源端命令：在源目录里打包/读取。`./` 前缀避免以 `-` 开头的名字被当成选项。
-    static func source(directory: String, entries: [ThrowEntry], mode: ThrowMode) -> String {
+    /// `verbose` 只在需要按文件推进进度时打开：tar 会把每个条目写到 stderr。
+    static func source(
+        directory: String,
+        entries: [ThrowEntry],
+        mode: ThrowMode,
+        verbose: Bool = false
+    ) -> String {
         let names = entries.map { quote("./\($0.name)") }.joined(separator: " ")
         let cd = "cd \(remoteQuote(directory.trimmed))"
         switch mode {
         case .direct:
             return "\(cd) && exec cat \(names)"
         case .archive:
-            return "\(cd) && exec tar -czf - \(names)"
+            return "\(cd) && exec tar -cz\(verbose ? "v" : "")f - \(names)"
         }
     }
 
-    /// 目标端命令：把 stdin 解到临时目录（归档），或写成一个文件（直传）。
-    static func destination(root: String, entries: [ThrowEntry], mode: ThrowMode) -> String {
-        let dir = remoteQuote(root.trimmed)
+    /// 归档里一共有多少个条目（目录也算一个），用作进度分母。
+    static func countItems(directory: String, entries: [ThrowEntry]) -> String {
+        let names = entries.map { remoteQuote("./\($0.name)") }.joined(separator: " ")
+        return """
+        cd \(remoteQuote(directory.trimmed)) || exit 1
+        find \(names) | wc -l
+        """
+    }
+
+    /// 目标端命令：直接进到目标目录里落盘，不建目录、不清理任何东西。
+    /// 目标目录必须已经存在（由 `probeDirectory` 事先确认）。
+    static func destination(root: String, name: String, mode: ThrowMode) -> String {
+        let cd = "cd \(remoteQuote(root.trimmed))"
         switch mode {
         case .direct:
-            let name = entries.first?.name ?? "payload"
-            return "mkdir -p \(dir) && exec cat > \(remoteQuote(join(root, name)))"
+            return "\(cd) && exec cat > \(quote(name))"
         case .archive:
-            return "mkdir -p \(dir) && exec tar -xzf - -C \(dir)"
+            return "\(cd) && exec tar -xzf -"
         }
-    }
-
-    /// 把临时目录里的顶层条目搬进目标目录；同名时加 `-2`、`-3` 后缀。
-    /// 空目录也清理掉，失败时由调用方 `rm -rf` 兜底。
-    static func moveScript(temp: String, target: String) -> String {
-        """
-        set -e
-        tmp=\(remoteQuote(temp.trimmed))
-        dest=\(remoteQuote(target.trimmed))
-        mkdir -p "$dest"
-        cd "$tmp"
-        for f in * .[!.]*; do
-          [ -e "$f" ] || continue
-          if [ ! -e "$dest/$f" ]; then
-            mv "$f" "$dest/$f"
-            continue
-          fi
-          stem="$f"
-          ext=""
-          case "$f" in
-            *.*)
-              stem="${f%.*}"
-              ext=".${f##*.}"
-              ;;
-          esac
-          n=2
-          while [ -e "$dest/$stem-$n$ext" ]; do n=$((n+1)); done
-          mv "$f" "$dest/$stem-$n$ext"
-        done
-        cd /
-        rm -rf "$tmp"
-        """
     }
 
     /// 精确字节数：`wc -c` 逐个文件执行，避免多文件时的 total 行干扰。
@@ -126,5 +120,10 @@ enum ThrowListing {
         }
 
         return entries.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+    }
+
+    /// `ThrowCommand.names` 的输出：一行一个名字。
+    static func parseNames(_ output: String) -> [String] {
+        output.split(separator: "\n").map(String.init)
     }
 }
